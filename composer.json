@@ -1,0 +1,55 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "joaquim/laravel-dynamodb",
+    "description": "DynamoDB driver for Laravel with automatic index resolution and Eloquent support",
+    "keywords": [
+        "laravel",
+        "dynamodb",
+        "aws",
+        "database",
+        "driver",
+        "eloquent",
+        "index",
+        "gsi",
+        "lsi"
+    ],
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Joaquim",
+            "email": "joaquim@example.com"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "illuminate/database": "^12.0",
+        "illuminate/support": "^12.0",
+        "aws/aws-sdk-php": "^3.322.9"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0",
+        "phpunit/phpunit": "^11.0",
+        "laravel/pint": "^1.24"
+    },
+    "autoload": {
+        "psr-4": {
+            "Joaquim\\LaravelDynamoDb\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Joaquim\\LaravelDynamoDb\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Joaquim\\LaravelDynamoDb\\DynamoDbServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
+
