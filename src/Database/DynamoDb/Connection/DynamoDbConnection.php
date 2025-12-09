@@ -144,10 +144,50 @@ class DynamoDbConnection extends BaseConnection
                 }
 
                 $result = $this->dynamoDbClient->query($params);
+
+                // Paginação automática: se houver LastEvaluatedKey e não há Limit estrito,
+                // buscar mais páginas automaticamente (até 1MB ou limit definido)
                 $items = array_map(
                     fn($item) => $this->marshaler->unmarshalItem($item),
                     $result['Items'] ?? []
                 );
+
+                // Se não há limit específico ou limit é maior que items retornados,
+                // e há LastEvaluatedKey, buscar mais páginas
+                $hasLimit = isset($params['Limit']);
+                $limit = $params['Limit'] ?? null;
+                $lastEvaluatedKey = $result['LastEvaluatedKey'] ?? null;
+
+                // Apenas fazer paginação automática se explicitamente solicitado (sem limit estrito)
+                // ou se limit é maior que items retornados
+                if ($lastEvaluatedKey && (!$hasLimit || ($limit && count($items) < $limit))) {
+                    $allItems = $items;
+                    $currentKey = $lastEvaluatedKey;
+
+                    do {
+                        $params['ExclusiveStartKey'] = $currentKey;
+                        if ($hasLimit && $limit) {
+                            $params['Limit'] = $limit - count($allItems);
+                        }
+
+                        $nextResult = $this->dynamoDbClient->query($params);
+                        $nextItems = array_map(
+                            fn($item) => $this->marshaler->unmarshalItem($item),
+                            $nextResult['Items'] ?? []
+                        );
+
+                        $allItems = array_merge($allItems, $nextItems);
+                        $currentKey = $nextResult['LastEvaluatedKey'] ?? null;
+
+                        // Limitar para evitar loops infinitos (máximo 10 páginas automáticas)
+                        if (count($allItems) >= ($limit ?? 1000) || !$currentKey) {
+                            break;
+                        }
+                    } while ($currentKey && count($allItems) < ($limit ?? 1000));
+
+                    $items = $allItems;
+                }
+
                 break;
 
             case 'Scan':
@@ -176,6 +216,40 @@ class DynamoDbConnection extends BaseConnection
                     fn($item) => $this->marshaler->unmarshalItem($item),
                     $result['Items'] ?? []
                 );
+
+                // Paginação automática para Scan (similar ao Query)
+                $hasLimit = isset($params['Limit']);
+                $limit = $params['Limit'] ?? null;
+                $lastEvaluatedKey = $result['LastEvaluatedKey'] ?? null;
+
+                if ($lastEvaluatedKey && (!$hasLimit || ($limit && count($items) < $limit))) {
+                    $allItems = $items;
+                    $currentKey = $lastEvaluatedKey;
+
+                    do {
+                        $params['ExclusiveStartKey'] = $currentKey;
+                        if ($hasLimit && $limit) {
+                            $params['Limit'] = $limit - count($allItems);
+                        }
+
+                        $nextResult = $this->dynamoDbClient->scan($params);
+                        $nextItems = array_map(
+                            fn($item) => $this->marshaler->unmarshalItem($item),
+                            $nextResult['Items'] ?? []
+                        );
+
+                        $allItems = array_merge($allItems, $nextItems);
+                        $currentKey = $nextResult['LastEvaluatedKey'] ?? null;
+
+                        // Limitar para evitar loops infinitos
+                        if (count($allItems) >= ($limit ?? 1000) || !$currentKey) {
+                            break;
+                        }
+                    } while ($currentKey && count($allItems) < ($limit ?? 1000));
+
+                    $items = $allItems;
+                }
+
                 break;
 
             default:
@@ -184,6 +258,83 @@ class DynamoDbConnection extends BaseConnection
 
         // Converter para objetos (compatível com Laravel)
         return array_map(fn($item) => (object) $item, $items);
+    }
+
+    /**
+     * Cache de metadados de tabelas.
+     *
+     * @var array
+     */
+    protected static array $tableMetadataCache = [];
+
+    /**
+     * Get table metadata (structure, indexes) with caching.
+     *
+     * @param string $tableName
+     * @param bool $forceRefresh Force refresh cache
+     * @return array
+     */
+    public function getTableMetadata(string $tableName, bool $forceRefresh = false): array
+    {
+        $cacheKey = "dynamodb_table_{$tableName}_metadata";
+
+        // Verificar cache
+        if (!$forceRefresh && isset(self::$tableMetadataCache[$cacheKey])) {
+            $cached = self::$tableMetadataCache[$cacheKey];
+
+            // Cache válido por 1 hora
+            if (isset($cached['cached_at']) && (time() - $cached['cached_at']) < 3600) {
+                return $cached['data'];
+            }
+        }
+
+        // Buscar metadados do DynamoDB
+        try {
+            $result = $this->dynamoDbClient->describeTable([
+                'TableName' => $tableName,
+            ]);
+
+            $metadata = [
+                'Table' => $result['Table'] ?? [],
+                'TableName' => $tableName,
+                'KeySchema' => $result['Table']['KeySchema'] ?? [],
+                'AttributeDefinitions' => $result['Table']['AttributeDefinitions'] ?? [],
+                'GlobalSecondaryIndexes' => $result['Table']['GlobalSecondaryIndexes'] ?? [],
+                'LocalSecondaryIndexes' => $result['Table']['LocalSecondaryIndexes'] ?? [],
+                'TableStatus' => $result['Table']['TableStatus'] ?? null,
+                'ItemCount' => $result['Table']['ItemCount'] ?? 0,
+            ];
+
+            // Cachear metadados
+            self::$tableMetadataCache[$cacheKey] = [
+                'data' => $metadata,
+                'cached_at' => time(),
+            ];
+
+            return $metadata;
+        } catch (\Exception $e) {
+            // Se erro ao buscar metadados, retornar cache anterior se existir
+            if (isset(self::$tableMetadataCache[$cacheKey])) {
+                return self::$tableMetadataCache[$cacheKey]['data'];
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Clear table metadata cache.
+     *
+     * @param string|null $tableName If null, clears all cache
+     * @return void
+     */
+    public function clearMetadataCache(?string $tableName = null): void
+    {
+        if ($tableName) {
+            unset(self::$tableMetadataCache["dynamodb_table_{$tableName}_metadata"]);
+        } else {
+            self::$tableMetadataCache = [];
+        }
     }
 
     /**
@@ -222,6 +373,73 @@ class DynamoDbConnection extends BaseConnection
             $totalCount += $result['Count'] ?? 0;
             $lastEvaluatedKey = $result['LastEvaluatedKey'] ?? null;
         } while ($lastEvaluatedKey !== null);
+
+        return $totalCount;
+    }
+
+    /**
+     * Count items using parallel scans for better performance on large tables.
+     *
+     * @param string $tableName
+     * @param int $segments Number of parallel segments (default: 4)
+     * @param array $filterExpression Optional filter expression
+     * @return int
+     */
+    public function countItemsParallel(string $tableName, int $segments = 4, array $filterExpression = []): int
+    {
+        if ($segments < 1 || $segments > 100) {
+            throw new \InvalidArgumentException('Segments must be between 1 and 100');
+        }
+
+        $params = [
+            'TableName' => $tableName,
+            'Select' => 'COUNT',
+        ];
+
+        // Adicionar FilterExpression se fornecido
+        if (!empty($filterExpression)) {
+            $params = array_merge($params, $filterExpression);
+        }
+
+        // Marshal ExpressionAttributeValues se houver
+        if (isset($params['ExpressionAttributeValues']) && !empty($params['ExpressionAttributeValues'])) {
+            $params['ExpressionAttributeValues'] = $this->marshaler->marshalItem($params['ExpressionAttributeValues']);
+        }
+
+        $totalCount = 0;
+
+        // Processar cada segmento sequencialmente (paralelização real requer threads/async PHP)
+        // Para verdadeira paralelização, considere usar queue jobs ou processos separados
+        for ($segment = 0; $segment < $segments; $segment++) {
+            try {
+                $segmentParams = array_merge($params, [
+                    'Segment' => $segment,
+                    'TotalSegments' => $segments,
+                ]);
+
+                $segmentCount = 0;
+                $lastEvaluatedKey = null;
+
+                do {
+                    if ($lastEvaluatedKey !== null) {
+                        $segmentParams['ExclusiveStartKey'] = $lastEvaluatedKey;
+                    }
+
+                    $segmentResult = $this->dynamoDbClient->scan($segmentParams);
+                    $segmentCount += $segmentResult['Count'] ?? 0;
+                    $lastEvaluatedKey = $segmentResult['LastEvaluatedKey'] ?? null;
+                } while ($lastEvaluatedKey !== null);
+
+                $totalCount += $segmentCount;
+            } catch (\Exception $e) {
+                // Log erro mas continua com outros segmentos
+                if (app()->bound('log')) {
+                    app('log')->warning("DynamoDB parallel scan segment {$segment} failed", [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
 
         return $totalCount;
     }

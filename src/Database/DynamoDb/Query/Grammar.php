@@ -156,6 +156,9 @@ class Grammar extends BaseGrammar
             $key => $value,
         ];
 
+        // Adicionar ProjectionExpression se houver select específico
+        $this->addProjectionExpression($query, $params);
+
         return $params;
     }
 
@@ -256,6 +259,9 @@ class Grammar extends BaseGrammar
         // Se for count, usar Select COUNT
         if (! is_null($query->aggregate) && isset($query->aggregate['function']) && $query->aggregate['function'] === 'count') {
             $params['Select'] = 'COUNT';
+        } else {
+            // Adicionar ProjectionExpression se houver select específico (apenas se não for COUNT)
+            $this->addProjectionExpression($query, $params);
         }
 
         // Limit
@@ -373,6 +379,9 @@ class Grammar extends BaseGrammar
         // Se for count, usar Select COUNT (mais eficiente)
         if (! is_null($query->aggregate) && isset($query->aggregate['function']) && $query->aggregate['function'] === 'count') {
             $params['Select'] = 'COUNT';
+        } else {
+            // Adicionar ProjectionExpression se houver select específico (apenas se não for COUNT)
+            $this->addProjectionExpression($query, $params);
         }
 
         // Limit
@@ -381,6 +390,52 @@ class Grammar extends BaseGrammar
         }
 
         return $params;
+    }
+
+    /**
+     * Add ProjectionExpression to params if query has specific columns selected.
+     *
+     * @param BaseBuilder $query
+     * @param array $params
+     * @return void
+     */
+    protected function addProjectionExpression(BaseBuilder $query, array &$params): void
+    {
+        // Verificar se há select específico (não é ['*'] ou vazio)
+        if (empty($query->columns) || $query->columns === ['*']) {
+            return;
+        }
+
+        $projectionParts = [];
+        $attributeNames = $params['ExpressionAttributeNames'] ?? [];
+        $counter = count($attributeNames);
+
+        foreach ($query->columns as $column) {
+            // Ignorar colunas com alias ou funções agregadas
+            if (str_contains($column, ' as ') || str_contains($column, '(')) {
+                continue;
+            }
+
+            // Extrair nome da coluna (remover alias se houver)
+            $columnName = trim(explode(' as ', $column)[0]);
+
+            // Ignorar colunas inválidas
+            if (empty($columnName) || $columnName === '*') {
+                continue;
+            }
+
+            $counter++;
+            $nameKey = "#attr{$counter}";
+
+            $projectionParts[] = $nameKey;
+            $attributeNames[$nameKey] = $columnName;
+        }
+
+        // Apenas adicionar ProjectionExpression se houver colunas válidas
+        if (!empty($projectionParts)) {
+            $params['ProjectionExpression'] = implode(', ', $projectionParts);
+            $params['ExpressionAttributeNames'] = $attributeNames;
+        }
     }
 
     /**
