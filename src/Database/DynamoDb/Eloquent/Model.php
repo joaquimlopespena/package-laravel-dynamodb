@@ -59,6 +59,29 @@ class Model extends BaseModel
     protected $lsiIndexes = [];
 
     /**
+     * Get the connection name for the model.
+     * Valida dinamicamente usando config('dynamodb.on_connection') ou config('database-dynamodb.on_connection').
+     *
+     * @return string|null
+     */
+    public function getConnectionName()
+    {
+        // Se o modelo já tem uma conexão definida explicitamente, usar ela
+        if (isset($this->connection)) {
+            return $this->connection;
+        }
+
+        // Tentar usar on_connection do config (prioridade)
+        $onConnection = config('dynamodb.on_connection') ?? config('database-dynamodb.on_connection');
+        if ($onConnection) {
+            return $onConnection;
+        }
+
+        // Fallback para default do config
+        return config('dynamodb.default') ?? config('database-dynamodb.default', 'local');
+    }
+
+    /**
      * Get a new query builder instance for the connection.
      *
      * @return DynamoDbBuilder
