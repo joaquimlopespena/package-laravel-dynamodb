@@ -269,6 +269,10 @@ class Grammar extends BaseGrammar
             $params['Limit'] = $query->limit;
         }
 
+        // OrderBy: DynamoDB só permite ordenação pelo Sort Key do índice usado
+        // Usar ScanIndexForward (true = ascending, false = descending)
+        $this->compileOrderBy($query, $params, $indexMatch);
+
         return $params;
     }
 
@@ -634,6 +638,46 @@ class Grammar extends BaseGrammar
             }
         }
         return $key;
+    }
+
+    /**
+     * Compile orderBy clause for DynamoDB Query operations.
+     *
+     * No DynamoDB, orderBy só funciona para operações Query e apenas pelo Sort Key do índice usado.
+     * Usa ScanIndexForward: true = ascending, false = descending.
+     *
+     * @param BaseBuilder $query
+     * @param array $params
+     * @param array $indexMatch
+     * @return void
+     */
+    protected function compileOrderBy(BaseBuilder $query, array &$params, array $indexMatch): void
+    {
+        // Verificar se há orderBy no query
+        if (empty($query->orders)) {
+            return;
+        }
+
+        // Pegar o primeiro orderBy (DynamoDB só suporta ordenação por um campo - o Sort Key)
+        $orderBy = $query->orders[0];
+        $orderColumn = $orderBy['column'] ?? null;
+        $orderDirection = strtolower($orderBy['direction'] ?? 'asc');
+
+        if (!$orderColumn) {
+            return;
+        }
+
+        // Obter o Sort Key do índice sendo usado
+        $indexSortKey = $indexMatch['sort_key'] ?? null;
+
+        // Se o orderBy for pelo Sort Key do índice, usar ScanIndexForward
+        if ($indexSortKey && $orderColumn === $indexSortKey) {
+            // ScanIndexForward: true = ascending, false = descending
+            $params['ScanIndexForward'] = ($orderDirection === 'asc');
+        }
+        // Se não for pelo Sort Key, não podemos ordenar nativamente no DynamoDB
+        // A ordenação será feita em memória no Processor (se necessário)
+        // Por enquanto, apenas ignoramos (não adicionamos ScanIndexForward)
     }
 }
 

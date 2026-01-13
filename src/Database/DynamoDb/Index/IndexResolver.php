@@ -95,6 +95,7 @@ class IndexResolver
                 'index_type' => 'primary',
                 'key_conditions' => $this->extractKeyConditions($wheres, [$this->partitionKey, $this->sortKey]),
                 'filter_conditions' => [],
+                'sort_key' => $this->sortKey,
             ];
         }
 
@@ -292,6 +293,7 @@ class IndexResolver
             'filter_conditions' => $filterConditions,
             'has_partition_key' => $hasPartitionKey,
             'has_sort_key' => $hasSortKey,
+            'sort_key' => $indexSortKey,
         ];
     }
 
