@@ -43,7 +43,9 @@ Isso cria um symlink em `vendor/joaquim/laravel-dynamodb/` apontando para o pack
 php artisan vendor:publish --provider="Joaquim\LaravelDynamoDb\DynamoDbServiceProvider" --tag="dynamodb-config"
 ```
 
-Isso cria o arquivo `config/dynamodb.php` com as conexões pré-configuradas.
+Isso cria o arquivo `config/database-dynamodb.php` com as conexões pré-configuradas.
+
+> **Nota:** O package suporta tanto `database-dynamodb.php` (novo) quanto `dynamodb.php` (legado) para compatibilidade com código existente.
 
 #### Passo 4: Configurar `.env`
 
@@ -64,11 +66,11 @@ AWS_DEFAULT_REGION=us-east-1
 
 #### Passo 5: Pronto! 🎉
 
-O package está instalado e configurado. As conexões definidas em `config/dynamodb.php` são automaticamente mescladas com `config/database.php` pelo ServiceProvider, então **você não precisa modificar `config/database.php` manualmente!**
+O package está instalado e configurado. As conexões definidas em `config/database-dynamodb.php` são automaticamente mescladas com `config/database.php` pelo ServiceProvider, então **você não precisa modificar `config/database.php` manualmente!**
 
 ## ⚙️ Configuração
 
-O arquivo `config/dynamodb.php` já vem com duas conexões pré-configuradas:
+O arquivo `config/database-dynamodb.php` já vem com duas conexões pré-configuradas:
 
 - **`aws`**: Para conexão com AWS DynamoDB real
 - **`local`**: Para conexão com DynamoDB Local

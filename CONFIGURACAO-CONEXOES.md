@@ -4,7 +4,7 @@ Este package suporta múltiplas conexões DynamoDB (AWS e Local).
 
 ## 📋 Como Funciona
 
-Este package usa `config/dynamodb.php` para definir as conexões DynamoDB. As conexões são automaticamente mescladas com `config/database.php` pelo ServiceProvider, então você **não precisa** modificar `config/database.php` manualmente!
+Este package usa `config/database-dynamodb.php` (ou `config/dynamodb.php` para compatibilidade) para definir as conexões DynamoDB. As conexões são automaticamente mescladas com `config/database.php` pelo ServiceProvider, então você **não precisa** modificar `config/database.php` manualmente!
 
 ## ⚙️ Configuração
 
@@ -14,9 +14,11 @@ Este package usa `config/dynamodb.php` para definir as conexões DynamoDB. As co
 php artisan vendor:publish --provider="Joaquim\LaravelDynamoDb\DynamoDbServiceProvider" --tag="dynamodb-config"
 ```
 
-Isso cria o arquivo `config/dynamodb.php` com as conexões padrão.
+Isso cria o arquivo `config/database-dynamodb.php` com as conexões padrão.
 
-### 2. Configurar `config/dynamodb.php`
+> **Nota:** O package suporta tanto `database-dynamodb.php` (novo) quanto `dynamodb.php` (legado) para compatibilidade com código existente.
+
+### 2. Configurar `config/database-dynamodb.php`
 
 O arquivo já vem com duas conexões pré-configuradas (`aws` e `local`). Você pode editar conforme necessário:
 
@@ -97,9 +99,10 @@ DB_CONNECTION=local
 ## ✅ Resumo
 
 - ✅ **Não precisa modificar `config/database.php`**
-- ✅ Define conexões apenas em `config/dynamodb.php`
+- ✅ Define conexões apenas em `config/database-dynamodb.php` (ou `dynamodb.php` para compatibilidade)
 - ✅ As conexões são automaticamente mescladas pelo ServiceProvider
 - ✅ O Connector detecta automaticamente se é Local (tem endpoint) ou AWS
 - ✅ Você pode ter quantas conexões precisar
+- ✅ Suporta código legado com `dynamodb.php`
 - ✅ Muito mais simples e organizado!
 

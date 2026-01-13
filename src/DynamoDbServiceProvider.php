@@ -20,11 +20,17 @@ class DynamoDbServiceProvider extends ServiceProvider
             return $connector->connect($config);
         });
 
-        // Registrar configuração
-        $this->mergeConfigFrom(
-            __DIR__ . '/../config/dynamodb.php',
-            'dynamodb'
-        );
+        // Registrar configuração (usar novo nome, mas manter compatibilidade)
+        $configFile = __DIR__ . '/../config/database-dynamodb.php';
+        if (file_exists($configFile)) {
+            $this->mergeConfigFrom($configFile, 'dynamodb');
+        } else {
+            // Fallback para nome antigo (compatibilidade retroativa)
+            $this->mergeConfigFrom(
+                __DIR__ . '/../config/dynamodb.php',
+                'dynamodb'
+            );
+        }
     }
 
     /**
@@ -32,9 +38,9 @@ class DynamoDbServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Publicar arquivo de configuração
+        // Publicar arquivo de configuração (novo nome)
         $this->publishes([
-            __DIR__ . '/../config/dynamodb.php' => config_path('dynamodb.php'),
+            __DIR__ . '/../config/database-dynamodb.php' => config_path('database-dynamodb.php'),
         ], 'dynamodb-config');
 
         // Mesclar conexões do config/dynamodb.php para config/database.php
@@ -42,16 +48,30 @@ class DynamoDbServiceProvider extends ServiceProvider
     }
 
     /**
-     * Mesclar conexões DynamoDB do config/dynamodb.php para config/database.php
+     * Mesclar conexões DynamoDB do config para config/database.php
+     * Suporta tanto database-dynamodb.php (novo) quanto dynamodb.php (legado)
      */
     protected function mergeDynamoDbConnections(): void
     {
-        // Ler conexões do config/dynamodb.php (se existir)
-        if (file_exists(config_path('dynamodb.php'))) {
+        $dynamoDbConfig = null;
+
+        // Tentar novo nome primeiro
+        if (file_exists(config_path('database-dynamodb.php'))) {
+            $dynamoDbConfig = require config_path('database-dynamodb.php');
+        }
+        // Fallback para nome antigo (compatibilidade com código legado)
+        elseif (file_exists(config_path('dynamodb.php'))) {
             $dynamoDbConfig = require config_path('dynamodb.php');
-        } else {
-            // Se não existe, usar a config padrão do package
-            $dynamoDbConfig = require __DIR__ . '/../config/dynamodb.php';
+        }
+        // Se não existe nenhum, usar a config padrão do package
+        else {
+            $defaultConfig = __DIR__ . '/../config/database-dynamodb.php';
+            if (file_exists($defaultConfig)) {
+                $dynamoDbConfig = require $defaultConfig;
+            } else {
+                // Último fallback para nome antigo no package
+                $dynamoDbConfig = require __DIR__ . '/../config/dynamodb.php';
+            }
         }
 
         // Se tem conexões definidas, mesclar com database.php

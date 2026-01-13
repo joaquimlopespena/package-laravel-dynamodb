@@ -24,6 +24,10 @@ Isso cria um symlink em `vendor/joaquim/laravel-dynamodb/` apontando para `packa
 php artisan vendor:publish --provider="Joaquim\LaravelDynamoDb\DynamoDbServiceProvider" --tag="dynamodb-config"
 ```
 
+Isso cria o arquivo `config/database-dynamodb.php` com as conexões pré-configuradas.
+
+> **Compatibilidade:** O package suporta tanto `database-dynamodb.php` (novo) quanto `dynamodb.php` (legado) para manter compatibilidade com código existente.
+
 ### 3. Configurar `.env`
 
 ```env
@@ -46,7 +50,7 @@ package-laravel-dynamodb/
 ├── README.md                  # Documentação
 ├── .gitignore                 # Arquivos ignorados
 ├── config/
-│   └── dynamodb.php          # Configuração padrão
+│   └── database-dynamodb.php # Configuração padrão
 └── src/
     ├── DynamoDbServiceProvider.php
     └── Database/
