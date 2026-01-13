@@ -11,7 +11,7 @@ return [
     |
     */
 
-    'default' => env('DYNAMODB_CONNECTION', 'dynamodb'),
+    'default' => env('DYNAMODB_CONNECTION', 'aws'),
 
     /*
     |--------------------------------------------------------------------------
@@ -24,19 +24,25 @@ return [
     */
 
     'connections' => [
-        'dynamodb' => [
+        'aws' => [
             'driver' => 'dynamodb',
-            'database' => env('DYNAMODB_TABLE', 'default'), // Usado pelo ConnectionFactory
-            'table' => env('DYNAMODB_TABLE', 'default'), // Usado pelo nosso código
+            'database' => env('DYNAMODB_TABLE', 'default'),
+            'table' => env('DYNAMODB_TABLE', 'default'),
+            'prefix' => '',
             'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
             'key' => env('AWS_ACCESS_KEY_ID'),
             'secret' => env('AWS_SECRET_ACCESS_KEY'),
-            'prefix' => '', // Necessário pelo ConnectionFactory
+        ],
 
-            // Endpoint para DynamoDB Local (opcional)
-            // Se não fornecido, usa AWS DynamoDB real
-            'endpoint' => env('DYNAMODB_ENDPOINT'),
+        'local' => [
+            'driver' => 'dynamodb',
+            'database' => env('DYNAMODB_TABLE', 'default'),
+            'table' => env('DYNAMODB_TABLE', 'default'),
+            'prefix' => '',
+            'region' => env('DYNAMODB_REGION', 'us-east-1'),
+            'endpoint' => env('DYNAMODB_ENDPOINT', 'http://localhost:8000'),
+            'key' => env('DYNAMODB_ACCESS_KEY_ID', 'AKIAIOSFODNN7EXAMPLE'),
+            'secret' => env('DYNAMODB_SECRET_ACCESS_KEY', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'),
         ],
     ],
 ];
-
