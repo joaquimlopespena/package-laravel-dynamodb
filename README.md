@@ -10,9 +10,11 @@ DynamoDB driver for Laravel with automatic index resolution and Eloquent support
 composer require joaquim/laravel-dynamodb
 ```
 
-### Instalação Local (desenvolvimento):
+### 🚀 Instalação Local (Desenvolvimento)
 
-1. Adicione ao `composer.json` do seu projeto Laravel:
+#### Passo 1: Adicionar repositório ao `composer.json`
+
+Adicione ao `composer.json` do seu projeto Laravel:
 
 ```json
 {
@@ -21,57 +23,57 @@ composer require joaquim/laravel-dynamodb
             "type": "path",
             "url": "../package-laravel-dynamodb"
         }
-    ],
-    "require": {
-        "joaquim/laravel-dynamodb": "@dev"
-    }
+    ]
 }
 ```
 
-2. Execute:
+#### Passo 2: Instalar via Composer
+
+Execute:
 
 ```bash
 composer require joaquim/laravel-dynamodb:@dev
 ```
 
-3. Publicar configuração:
+Isso cria um symlink em `vendor/joaquim/laravel-dynamodb/` apontando para o package local.
+
+#### Passo 3: Publicar Configuração
 
 ```bash
 php artisan vendor:publish --provider="Joaquim\LaravelDynamoDb\DynamoDbServiceProvider" --tag="dynamodb-config"
 ```
 
+Isso cria o arquivo `config/dynamodb.php` com as conexões pré-configuradas.
+
+#### Passo 4: Configurar `.env`
+
+Para **DynamoDB Local** (desenvolvimento):
+```env
+DYNAMODB_ENDPOINT=http://localhost:8000
+DYNAMODB_REGION=us-east-1
+DYNAMODB_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+DYNAMODB_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+```
+
+Para **AWS DynamoDB** (produção):
+```env
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+AWS_DEFAULT_REGION=us-east-1
+```
+
+#### Passo 5: Pronto! 🎉
+
+O package está instalado e configurado. As conexões definidas em `config/dynamodb.php` são automaticamente mescladas com `config/database.php` pelo ServiceProvider, então **você não precisa modificar `config/database.php` manualmente!**
+
 ## ⚙️ Configuração
 
-### 1. Configurar `.env`:
+O arquivo `config/dynamodb.php` já vem com duas conexões pré-configuradas:
 
-```env
-# DynamoDB Local (desenvolvimento)
-DYNAMODB_ENDPOINT=http://localhost:8000
-AWS_ACCESS_KEY_ID=dummy
-AWS_SECRET_ACCESS_KEY=dummy
-AWS_DEFAULT_REGION=us-east-1
+- **`aws`**: Para conexão com AWS DynamoDB real
+- **`local`**: Para conexão com DynamoDB Local
 
-# Ou AWS Real (produção)
-# DYNAMODB_ENDPOINT=
-# AWS_ACCESS_KEY_ID=your_key
-# AWS_SECRET_ACCESS_KEY=your_secret
-# AWS_DEFAULT_REGION=us-east-1
-```
-
-### 2. Adicionar conexão no `config/database.php`:
-
-```php
-'connections' => [
-    'dynamodb' => [
-        'driver' => 'dynamodb',
-        'table' => env('DYNAMODB_TABLE', 'default'),
-        'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
-        'key' => env('AWS_ACCESS_KEY_ID'),
-        'secret' => env('AWS_SECRET_ACCESS_KEY'),
-        'endpoint' => env('DYNAMODB_ENDPOINT'),
-    ],
-],
-```
+Você pode editar essas conexões ou adicionar novas conforme necessário. O ServiceProvider automaticamente disponibiliza essas conexões no Laravel.
 
 ## 🚀 Uso
 
@@ -89,7 +91,7 @@ class User extends Model
 {
     use HasDynamoDbKeys;
 
-    protected $connection = 'dynamodb';
+    protected $connection = 'local'; // ou 'aws' para produção
     protected $table = 'users';
     
     protected $partitionKey = 'id';
