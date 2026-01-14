@@ -471,10 +471,27 @@ class DynamoDbConnection extends BaseConnection
     protected function executeDynamoDbPutItem(array $compiled)
     {
         $params = $compiled['params'] ?? $compiled;
+        $item = $params['Item'] ?? $params;
+        $tableName = $params['TableName'] ?? $this->getConfig('table');
+
+        // Validar que o Item não está vazio
+        if (empty($item)) {
+            throw new \RuntimeException("Cannot insert empty item into table '{$tableName}'");
+        }
+
+        // Log para debug
+        if (app()->bound('log') && config('app.debug')) {
+            app('log')->debug('DynamoDB PutItem', [
+                'table' => $tableName,
+                'item_keys' => array_keys($item),
+                'has_id' => isset($item['id']),
+                'item' => $item,
+            ]);
+        }
 
         $this->dynamoDbClient->putItem([
-            'TableName' => $params['TableName'] ?? $this->getConfig('table'),
-            'Item' => $this->marshaler->marshalItem($params['Item'] ?? $params),
+            'TableName' => $tableName,
+            'Item' => $this->marshaler->marshalItem($item),
         ]);
     }
 
@@ -571,4 +588,3 @@ class DynamoDbConnection extends BaseConnection
         return $this->getConfig('table');
     }
 }
-
