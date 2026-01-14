@@ -121,6 +121,19 @@ class Model extends BaseModel
         // Obter atributos
         $attributes = $this->getAttributes();
 
+        // Garantir que a partition key está presente
+        $partitionKey = $this->getPartitionKey();
+        if (empty($attributes[$partitionKey])) {
+            // Tentar obter do atributo diretamente (pode ter sido definido no evento creating)
+            $id = $this->getAttribute($partitionKey);
+            if (empty($id)) {
+                // Se ainda não tiver, gerar UUID
+                $id = \Illuminate\Support\Str::uuid()->toString();
+                $this->setAttribute($partitionKey, $id);
+            }
+            $attributes[$partitionKey] = $id;
+        }
+
         // Executar insert via connection
         $query->getConnection()->insert(
             $query->getQuery()->getGrammar()->compileInsert($query->getQuery(), $attributes)
@@ -258,10 +271,10 @@ class Model extends BaseModel
             // Tabela não existe, criar automaticamente
             try {
                 return $this->createTable();
-            } catch (\Exception $e) {
+            } catch (\Exception $createException) {
                 // Log erro mas não falhar (em produção, pode querer tratar diferente)
                 if (app()->bound('log')) {
-                    app('log')->warning("Failed to auto-create DynamoDB table {$tableName}: " . $e->getMessage());
+                    app('log')->warning("Failed to auto-create DynamoDB table {$tableName}: " . $createException->getMessage());
                 }
                 return false;
             }
@@ -529,4 +542,3 @@ class Model extends BaseModel
         return 'S';
     }
 }
-
