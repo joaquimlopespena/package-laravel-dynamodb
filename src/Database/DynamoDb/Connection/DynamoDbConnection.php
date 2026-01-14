@@ -116,6 +116,60 @@ class DynamoDbConnection extends BaseConnection
         $params = $compiled['params'] ?? [];
 
         switch ($operation) {
+            case 'BatchGetItem':
+                // BatchGetItem: buscar múltiplos itens por chave primária
+                $tableName = $params['TableName'];
+                $keys = $params['Keys'] ?? [];
+                $projectionExpression = $params['ProjectionExpression'] ?? null;
+                $expressionAttributeNames = $params['ExpressionAttributeNames'] ?? null;
+                
+                $items = [];
+                
+                // DynamoDB BatchGetItem tem limite de 100 itens por requisição
+                $chunks = array_chunk($keys, 100);
+                
+                foreach ($chunks as $chunk) {
+                    $requestParams = [
+                        'RequestItems' => [
+                            $tableName => [
+                                'Keys' => array_map(
+                                    fn($key) => $this->marshaler->marshalItem($key),
+                                    $chunk
+                                )
+                            ]
+                        ]
+                    ];
+                    
+                    // Adicionar ProjectionExpression se houver
+                    if ($projectionExpression) {
+                        $requestParams['RequestItems'][$tableName]['ProjectionExpression'] = $projectionExpression;
+                        if ($expressionAttributeNames) {
+                            $requestParams['RequestItems'][$tableName]['ExpressionAttributeNames'] = $expressionAttributeNames;
+                        }
+                    }
+                    
+                    $result = $this->dynamoDbClient->batchGetItem($requestParams);
+                    
+                    if (isset($result['Responses'][$tableName])) {
+                        foreach ($result['Responses'][$tableName] as $item) {
+                            $items[] = $this->marshaler->unmarshalItem($item);
+                        }
+                    }
+                    
+                    // Se houver itens não processados, fazer requisições adicionais
+                    if (isset($result['UnprocessedKeys'][$tableName])) {
+                        // Em produção, você pode querer implementar retry logic aqui
+                        // Por enquanto, vamos apenas logar
+                        if (app()->bound('log')) {
+                            app('log')->warning('DynamoDB BatchGetItem: Unprocessed keys', [
+                                'table' => $tableName,
+                                'count' => count($result['UnprocessedKeys'][$tableName]['Keys'])
+                            ]);
+                        }
+                    }
+                }
+                break;
+
             case 'GetItem':
                 // Marshal Key antes de enviar
                 if (isset($params['Key']) && !empty($params['Key'])) {
