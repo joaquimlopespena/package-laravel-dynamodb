@@ -78,6 +78,12 @@ class Grammar extends BaseGrammar
         ];
 
         switch ($operation) {
+            case 'BatchGetItem':
+                return [
+                    'operation' => 'BatchGetItem',
+                    'params' => $this->compileBatchGetItem($query, $params),
+                ];
+
             case 'GetItem':
                 return [
                     'operation' => 'GetItem',
@@ -109,6 +115,15 @@ class Grammar extends BaseGrammar
     {
         $wheres = $query->wheres;
 
+        // BatchGetItem: quando há apenas um whereIn na primary key
+        if (count($wheres) === 1 &&
+            $wheres[0]['type'] === 'In') {
+            $resolver = $this->getIndexResolver($query);
+            if ($resolver && $resolver->isPartitionKey($wheres[0]['column'])) {
+                return 'BatchGetItem';
+            }
+        }
+
         // GetItem: quando há apenas uma condição de igualdade na primary key
         if (count($wheres) === 1 &&
             $wheres[0]['type'] === 'Basic' &&
@@ -137,6 +152,33 @@ class Grammar extends BaseGrammar
 
         // Por último, usar Scan (menos eficiente)
         return 'Scan';
+    }
+
+    /**
+     * Compile BatchGetItem operation.
+     *
+     * @param BaseBuilder $query
+     * @param array $params
+     * @return array
+     */
+    protected function compileBatchGetItem(BaseBuilder $query, array $params)
+    {
+        $where = $query->wheres[0];
+        $key = $where['column'];
+        $values = $where['values'] ?? [];
+
+        // Preparar as chaves para BatchGetItem
+        // DynamoDB BatchGetItem tem limite de 100 itens por requisição
+        $keys = array_map(function ($value) use ($key) {
+            return [$key => $value];
+        }, $values);
+
+        $params['Keys'] = $keys;
+
+        // Adicionar ProjectionExpression se houver select específico
+        $this->addProjectionExpression($query, $params);
+
+        return $params;
     }
 
     /**
