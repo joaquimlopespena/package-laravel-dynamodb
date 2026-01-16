@@ -164,6 +164,18 @@ class Model extends BaseModel
         // Obter atributos modificados
         $dirty = $this->getDirty();
 
+        // Remover a chave primária do array de dirty para evitar tentar atualizá-la
+        $partitionKey = $this->getPartitionKey();
+        if (isset($dirty[$partitionKey])) {
+            unset($dirty[$partitionKey]);
+        }
+
+        // Remover sort key se existir
+        $sortKey = $this->getSortKey();
+        if ($sortKey && isset($dirty[$sortKey])) {
+            unset($dirty[$sortKey]);
+        }
+
         if (count($dirty) === 0) {
             return false;
         }
@@ -201,6 +213,49 @@ class Model extends BaseModel
         );
 
         return true;
+    }
+
+    /**
+     * Set the keys for a save update query.
+     * Sobrescreve o método padrão do Eloquent para garantir que o ID seja usado corretamente
+     * mesmo após fill() e garantir que uses getOriginal() para preservar o ID antes do fill().
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $query
+     * @return \Illuminate\Database\Eloquent\Builder
+     */
+    protected function setKeysForSaveQuery($query)
+    {
+        $partitionKey = $this->getPartitionKey();
+        
+        // Prioridade: 1) getOriginal (preserva ID antes do fill), 2) getKey() atual, 3) getAttribute
+        // getOriginal() é importante porque preserva o valor antes do fill()
+        $keyValue = $this->getOriginal($partitionKey);
+        
+        if (empty($keyValue)) {
+            $keyValue = $this->getKey();
+        }
+        
+        if (empty($keyValue)) {
+            $keyValue = $this->getAttribute($partitionKey);
+        }
+        
+        if (empty($keyValue)) {
+            throw new \RuntimeException("Cannot update model without primary key value. Partition key: {$partitionKey}");
+        }
+        
+        $query->where($partitionKey, '=', $keyValue);
+        
+        // Se tiver sort key, adicionar também
+        $sortKey = $this->getSortKey();
+        if ($sortKey) {
+            // Prioridade: original primeiro, depois atributo atual
+            $sortKeyValue = $this->getOriginal($sortKey) ?? $this->getAttribute($sortKey);
+            if (!empty($sortKeyValue)) {
+                $query->where($sortKey, '=', $sortKeyValue);
+            }
+        }
+
+        return $query;
     }
 
     /**
