@@ -197,49 +197,95 @@ class DynamoDbConnection extends BaseConnection
                     ]);
                 }
 
-                $result = $this->dynamoDbClient->query($params);
-
-                // Paginação automática: se houver LastEvaluatedKey e não há Limit estrito,
-                // buscar mais páginas automaticamente (até 1MB ou limit definido)
-                $items = array_map(
-                    fn($item) => $this->marshaler->unmarshalItem($item),
-                    $result['Items'] ?? []
-                );
-
-                // Se não há limit específico ou limit é maior que items retornados,
-                // e há LastEvaluatedKey, buscar mais páginas
                 $hasLimit = isset($params['Limit']);
                 $limit = $params['Limit'] ?? null;
-                $lastEvaluatedKey = $result['LastEvaluatedKey'] ?? null;
-
-                // Apenas fazer paginação automática se explicitamente solicitado (sem limit estrito)
-                // ou se limit é maior que items retornados
-                if ($lastEvaluatedKey && (!$hasLimit || ($limit && count($items) < $limit))) {
-                    $allItems = $items;
-                    $currentKey = $lastEvaluatedKey;
-
+                $hasFilterExpression = isset($params['FilterExpression']) && !empty($params['FilterExpression']);
+                
+                // Otimização: Quando há FilterExpression e limit pequeno (≤50), processa em lotes menores
+                // e para assim que encontrar resultados suficientes. Isso acelera o caso "não encontrado".
+                $isOptimizedQuery = $hasFilterExpression && $hasLimit && $limit <= 50;
+                
+                if ($isOptimizedQuery) {
+                    // Query otimizada: processa em lotes menores e para quando encontrar
+                    $items = [];
+                    $currentKey = null;
+                    $maxScanned = $limit * 3; // Processa até 3x o limit antes de desistir
+                    $totalScanned = 0;
+                    
                     do {
-                        $params['ExclusiveStartKey'] = $currentKey;
-                        if ($hasLimit && $limit) {
-                            $params['Limit'] = $limit - count($allItems);
+                        if ($currentKey) {
+                            $params['ExclusiveStartKey'] = $currentKey;
                         }
-
-                        $nextResult = $this->dynamoDbClient->query($params);
-                        $nextItems = array_map(
-                            fn($item) => $this->marshaler->unmarshalItem($item),
-                            $nextResult['Items'] ?? []
-                        );
-
-                        $allItems = array_merge($allItems, $nextItems);
-                        $currentKey = $nextResult['LastEvaluatedKey'] ?? null;
-
-                        // Limitar para evitar loops infinitos (máximo 10 páginas automáticas)
-                        if (count($allItems) >= ($limit ?? 1000) || !$currentKey) {
+                        
+                        // Usa lotes menores para acelerar quando não encontra
+                        $params['Limit'] = min(20, $limit - count($items), $maxScanned - $totalScanned);
+                        
+                        if ($params['Limit'] <= 0) {
                             break;
                         }
-                    } while ($currentKey && count($allItems) < ($limit ?? 1000));
+                        
+                        $result = $this->dynamoDbClient->query($params);
+                        $batchItems = array_map(
+                            fn($item) => $this->marshaler->unmarshalItem($item),
+                            $result['Items'] ?? []
+                        );
+                        
+                        $items = array_merge($items, $batchItems);
+                        $totalScanned += count($result['Items'] ?? []);
+                        $currentKey = $result['LastEvaluatedKey'] ?? null;
+                        
+                        // Para se encontrou resultados suficientes ou processou muito
+                        if (count($items) >= $limit || $totalScanned >= $maxScanned || !$currentKey) {
+                            break;
+                        }
+                    } while (true);
+                    
+                    // Limita aos primeiros $limit resultados
+                    $items = array_slice($items, 0, $limit);
+                } else {
+                    // Query normal: comportamento padrão
+                    $result = $this->dynamoDbClient->query($params);
 
-                    $items = $allItems;
+                    // Paginação automática: se houver LastEvaluatedKey e não há Limit estrito,
+                    // buscar mais páginas automaticamente (até 1MB ou limit definido)
+                    $items = array_map(
+                        fn($item) => $this->marshaler->unmarshalItem($item),
+                        $result['Items'] ?? []
+                    );
+
+                    // Se não há limit específico ou limit é maior que items retornados,
+                    // e há LastEvaluatedKey, buscar mais páginas
+                    $lastEvaluatedKey = $result['LastEvaluatedKey'] ?? null;
+
+                    // Apenas fazer paginação automática se explicitamente solicitado (sem limit estrito)
+                    // ou se limit é maior que items retornados
+                    if ($lastEvaluatedKey && (!$hasLimit || ($limit && count($items) < $limit))) {
+                        $allItems = $items;
+                        $currentKey = $lastEvaluatedKey;
+
+                        do {
+                            $params['ExclusiveStartKey'] = $currentKey;
+                            if ($hasLimit && $limit) {
+                                $params['Limit'] = $limit - count($allItems);
+                            }
+
+                            $nextResult = $this->dynamoDbClient->query($params);
+                            $nextItems = array_map(
+                                fn($item) => $this->marshaler->unmarshalItem($item),
+                                $nextResult['Items'] ?? []
+                            );
+
+                            $allItems = array_merge($allItems, $nextItems);
+                            $currentKey = $nextResult['LastEvaluatedKey'] ?? null;
+
+                            // Limitar para evitar loops infinitos (máximo 10 páginas automáticas)
+                            if (count($allItems) >= ($limit ?? 1000) || !$currentKey) {
+                                break;
+                            }
+                        } while ($currentKey && count($allItems) < ($limit ?? 1000));
+
+                        $items = $allItems;
+                    }
                 }
 
                 break;
