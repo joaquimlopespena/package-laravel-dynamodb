@@ -205,8 +205,22 @@ class IndexResolver
         foreach ($this->gsiIndexes as $indexName => $indexConfig) {
             $match = $this->checkIndexMatch($wheres, $indexConfig, $indexName, 'gsi');
             if ($match) {
-                // Priorizar índices que têm Partition Key nas condições
-                $priority = $match['has_partition_key'] ? 1 : 0;
+                // Priorizar índices com base em quais keys estão nas condições:
+                // Priority 3: Partition Key + Sort Key (ambos nas condições)
+                // Priority 2: Partition Key (Sort Key não existe ou não está nas condições)
+                // Priority 1: Apenas Partition Key (mas índice tem Sort Key que não está nas condições)
+                // Priority 0: Sem Partition Key
+                
+                if ($match['has_partition_key'] && $match['has_sort_key']) {
+                    $priority = 3; // Melhor match: PK + SK
+                } elseif ($match['has_partition_key'] && empty($match['sort_key'])) {
+                    $priority = 2; // PK sem SK no índice
+                } elseif ($match['has_partition_key']) {
+                    $priority = 1; // PK, mas SK do índice não está nas condições
+                } else {
+                    $priority = 0;
+                }
+                
                 $matches[] = ['match' => $match, 'priority' => $priority];
             }
         }
@@ -215,7 +229,7 @@ class IndexResolver
             return null;
         }
 
-        // Ordenar por prioridade (índices com Partition Key primeiro)
+        // Ordenar por prioridade (prioridade maior primeiro)
         usort($matches, fn($a, $b) => $b['priority'] <=> $a['priority']);
 
         // Retornar o melhor match
