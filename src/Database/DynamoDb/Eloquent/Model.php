@@ -58,6 +58,26 @@ class Model extends BaseModel
      */
     protected $lsiIndexes = [];
 
+    protected $fieldNormalizers = [];
+
+    /**
+     * Boot the model.
+     * Remove atributos null/vazios antes de salvar (DynamoDB não aceita null).
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::saving(function ($model) {
+            $attributes = $model->getAttributes();
+            foreach ($attributes as $key => $value) {
+                if (is_null($value) || $value === '') {
+                    unset($model->$key);
+                }
+            }
+        });
+    }
+
     /**
      * Get the connection name for the model.
      * Valida dinamicamente usando config('dynamodb.on_connection') ou config('database-dynamodb.on_connection').
@@ -296,6 +316,16 @@ class Model extends BaseModel
     public function getLsiIndexes()
     {
         return $this->lsiIndexes;
+    }
+
+    /**
+     * Get field normalizers configuration.
+     *
+     * @return array
+     */
+    public function getFieldNormalizers()
+    {
+        return $this->fieldNormalizers;
     }
 
     /**
