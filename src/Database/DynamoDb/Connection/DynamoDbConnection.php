@@ -122,12 +122,12 @@ class DynamoDbConnection extends BaseConnection
                 $keys = $params['Keys'] ?? [];
                 $projectionExpression = $params['ProjectionExpression'] ?? null;
                 $expressionAttributeNames = $params['ExpressionAttributeNames'] ?? null;
-                
+
                 $items = [];
-                
+
                 // DynamoDB BatchGetItem tem limite de 100 itens por requisição
                 $chunks = array_chunk($keys, 100);
-                
+
                 foreach ($chunks as $chunk) {
                     $requestParams = [
                         'RequestItems' => [
@@ -139,7 +139,7 @@ class DynamoDbConnection extends BaseConnection
                             ]
                         ]
                     ];
-                    
+
                     // Adicionar ProjectionExpression se houver
                     if ($projectionExpression) {
                         $requestParams['RequestItems'][$tableName]['ProjectionExpression'] = $projectionExpression;
@@ -147,15 +147,15 @@ class DynamoDbConnection extends BaseConnection
                             $requestParams['RequestItems'][$tableName]['ExpressionAttributeNames'] = $expressionAttributeNames;
                         }
                     }
-                    
+
                     $result = $this->dynamoDbClient->batchGetItem($requestParams);
-                    
+
                     if (isset($result['Responses'][$tableName])) {
                         foreach ($result['Responses'][$tableName] as $item) {
                             $items[] = $this->marshaler->unmarshalItem($item);
                         }
                     }
-                    
+
                     // Se houver itens não processados, fazer requisições adicionais
                     if (isset($result['UnprocessedKeys'][$tableName])) {
                         // Em produção, você pode querer implementar retry logic aqui
@@ -200,46 +200,66 @@ class DynamoDbConnection extends BaseConnection
                 $hasLimit = isset($params['Limit']);
                 $limit = $params['Limit'] ?? null;
                 $hasFilterExpression = isset($params['FilterExpression']) && !empty($params['FilterExpression']);
-                
+
                 // Otimização: Quando há FilterExpression e limit pequeno (≤50), processa em lotes menores
                 // e para assim que encontrar resultados suficientes. Isso acelera o caso "não encontrado".
                 $isOptimizedQuery = $hasFilterExpression && $hasLimit && $limit <= 50;
-                
+
                 if ($isOptimizedQuery) {
                     // Query otimizada: processa em lotes menores e para quando encontrar
                     $items = [];
                     $currentKey = null;
-                    $maxScanned = $limit * 3; // Processa até 3x o limit antes de desistir
+                    // Ajustado: para limits muito pequenos (≤5), processar até 10.000 itens antes de desistir
+                    // Isso permite encontrar registros mesmo se houver muitos deletados antes
+                    // Para limits maiores, processar até 3x o limit (comportamento anterior)
+                    $maxScanned = $limit <= 5 ? 10000 : $limit * 3;
                     $totalScanned = 0;
-                    
+                    $batchCount = 0;
+                    $startTime = microtime(true);
+
                     do {
                         if ($currentKey) {
                             $params['ExclusiveStartKey'] = $currentKey;
                         }
-                        
+
                         // Usa lotes menores para acelerar quando não encontra
                         $params['Limit'] = min(20, $limit - count($items), $maxScanned - $totalScanned);
-                        
+
                         if ($params['Limit'] <= 0) {
                             break;
                         }
-                        
+
                         $result = $this->dynamoDbClient->query($params);
                         $batchItems = array_map(
                             fn($item) => $this->marshaler->unmarshalItem($item),
                             $result['Items'] ?? []
                         );
-                        
+
                         $items = array_merge($items, $batchItems);
                         $totalScanned += count($result['Items'] ?? []);
+                        $batchCount++;
                         $currentKey = $result['LastEvaluatedKey'] ?? null;
-                        
+
                         // Para se encontrou resultados suficientes ou processou muito
                         if (count($items) >= $limit || $totalScanned >= $maxScanned || !$currentKey) {
                             break;
                         }
                     } while (true);
-                    
+
+                    // Log de debug para queries otimizadas
+                    $duration = round((microtime(true) - $startTime) * 1000, 2);
+                    if (app()->bound('log') && config('app.debug')) {
+                        app('log')->debug('DynamoDB Optimized Query Stats', [
+                            'table' => $params['TableName'],
+                            'index' => $params['IndexName'] ?? 'Primary',
+                            'limit' => $limit,
+                            'items_found' => count($items),
+                            'items_scanned' => $totalScanned,
+                            'batches' => $batchCount,
+                            'duration_ms' => $duration,
+                        ]);
+                    }
+
                     // Limita aos primeiros $limit resultados
                     $items = array_slice($items, 0, $limit);
                 } else {
@@ -257,9 +277,24 @@ class DynamoDbConnection extends BaseConnection
                     // e há LastEvaluatedKey, buscar mais páginas
                     $lastEvaluatedKey = $result['LastEvaluatedKey'] ?? null;
 
+                    // OTIMIZAÇÃO: Para limits pequenos (≤50) SEM FilterExpression, não paginar se não encontrou nada
+                    // Quando não há FilterExpression, as condições do índice já filtram tudo - se não encontrou
+                    // na primeira página, não vai encontrar nas próximas (mesma partition+sort key).
+                    // COM FilterExpression, pode haver registros nas próximas páginas que passem no filtro.
+                    $shouldPaginate = $lastEvaluatedKey && (!$hasLimit || ($limit && count($items) < $limit));
+                    $isSmallLimit = $hasLimit && $limit <= 50;
+                    $noResultsInFirstPage = count($items) === 0;
+                    $hasFilterExpression = isset($params['FilterExpression']) && !empty($params['FilterExpression']);
+                    
+                    if ($isSmallLimit && $noResultsInFirstPage && !$hasFilterExpression) {
+                        // Para limits pequenos SEM FilterExpression, se não encontrou nada na primeira página, não continuar
+                        // (com FilterExpression pode haver registros filtrados nas próximas páginas)
+                        $shouldPaginate = false;
+                    }
+
                     // Apenas fazer paginação automática se explicitamente solicitado (sem limit estrito)
                     // ou se limit é maior que items retornados
-                    if ($lastEvaluatedKey && (!$hasLimit || ($limit && count($items) < $limit))) {
+                    if ($shouldPaginate) {
                         $allItems = $items;
                         $currentKey = $lastEvaluatedKey;
 
@@ -322,7 +357,19 @@ class DynamoDbConnection extends BaseConnection
                 $limit = $params['Limit'] ?? null;
                 $lastEvaluatedKey = $result['LastEvaluatedKey'] ?? null;
 
-                if ($lastEvaluatedKey && (!$hasLimit || ($limit && count($items) < $limit))) {
+                // OTIMIZAÇÃO: Para Scan com limits pequenos (≤50) SEM FilterExpression, não paginar se vazio
+                // Com FilterExpression, pode haver registros filtrados nas próximas páginas
+                $shouldPaginate = $lastEvaluatedKey && (!$hasLimit || ($limit && count($items) < $limit));
+                $isSmallLimit = $hasLimit && $limit <= 50;
+                $noResultsInFirstPage = count($items) === 0;
+                $hasFilterExpression = isset($params['FilterExpression']) && !empty($params['FilterExpression']);
+                
+                if ($isSmallLimit && $noResultsInFirstPage && !$hasFilterExpression) {
+                    // Para limits pequenos SEM FilterExpression, se não encontrou nada, não continuar
+                    $shouldPaginate = false;
+                }
+
+                if ($shouldPaginate) {
                     $allItems = $items;
                     $currentKey = $lastEvaluatedKey;
 
@@ -675,7 +722,7 @@ class DynamoDbConnection extends BaseConnection
      */
     public function query()
     {
-            return new \Joaquim\LaravelDynamoDb\Database\DynamoDb\Query\Builder($this);
+        return new \Joaquim\LaravelDynamoDb\Database\DynamoDb\Query\Builder($this);
     }
 
     /**
