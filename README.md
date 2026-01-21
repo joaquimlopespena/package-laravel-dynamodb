@@ -70,8 +70,10 @@ No arquivo `.env`:
 ```env
 # Para usar DynamoDB Local
 DYNAMODB_CONNECTION=local
-DYNAMODB_ENDPOINT=http://localhost:8000
-DYNAMODB_REGION=us-east-1
+DYNAMODB_ENDPOINT=http://localhost:9000
+DYNAMODB_REGION=us-west-1
+DYNAMODB_DEBUG=true
+DYNAMODB_ACCESS_KEY_ID=true
 
 # Para usar AWS DynamoDB
 DYNAMODB_CONNECTION=aws
