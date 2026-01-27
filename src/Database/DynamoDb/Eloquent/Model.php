@@ -123,6 +123,18 @@ class Model extends BaseModel
     }
 
     /**
+     * Create a new Eloquent query builder for the model.
+     * Override to use custom DynamoDb Eloquent Builder.
+     *
+     * @param  \Illuminate\Database\Query\Builder  $query
+     * @return \Illuminate\Database\Eloquent\Builder|static
+     */
+    public function newEloquentBuilder($query)
+    {
+        return new \Joaquim\LaravelDynamoDb\Database\DynamoDb\Eloquent\Builder($query);
+    }
+
+    /**
      * Perform a model insert operation.
      *
      * @param \Illuminate\Database\Eloquent\Builder $query
