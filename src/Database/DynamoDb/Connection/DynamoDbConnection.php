@@ -5,8 +5,15 @@ namespace Joaquim\LaravelDynamoDb\Database\DynamoDb\Connection;
 use Illuminate\Database\Connection as BaseConnection;
 use Aws\DynamoDb\DynamoDbClient;
 use Aws\DynamoDb\Marshaler;
+use Aws\DynamoDb\Exception\DynamoDbException as AwsDynamoDbException;
 use Joaquim\LaravelDynamoDb\Database\DynamoDb\Query\Grammar as DynamoDbGrammar;
 use Joaquim\LaravelDynamoDb\Database\DynamoDb\Query\Processor as DynamoDbProcessor;
+use Joaquim\LaravelDynamoDb\Exceptions\QueryException;
+use Joaquim\LaravelDynamoDb\Exceptions\OperationException;
+use Joaquim\LaravelDynamoDb\Exceptions\ValidationException;
+use Joaquim\LaravelDynamoDb\Exceptions\ConnectionException;
+use Joaquim\LaravelDynamoDb\Exceptions\TableNotFoundException;
+use Joaquim\LaravelDynamoDb\Exceptions\BatchOperationException;
 
 class DynamoDbConnection extends BaseConnection
 {
@@ -101,7 +108,14 @@ class DynamoDbConnection extends BaseConnection
             return $this->executeDynamoDbSelect($query);
         }
 
-        throw new \RuntimeException('DynamoDB does not support SQL queries');
+        throw new QueryException(
+            message: 'DynamoDB does not support SQL queries',
+            context: [
+                'query' => $query,
+                'bindings' => $bindings,
+            ],
+            suggestion: 'Use Eloquent or Query Builder methods instead of raw SQL queries.'
+        );
     }
 
     /**
@@ -148,7 +162,25 @@ class DynamoDbConnection extends BaseConnection
                         }
                     }
 
-                    $result = $this->dynamoDbClient->batchGetItem($requestParams);
+                    try {
+                        $result = $this->dynamoDbClient->batchGetItem($requestParams);
+                    } catch (AwsDynamoDbException $e) {
+                        throw new BatchOperationException(
+                            message: "BatchGetItem failed for table '{$tableName}': " . $e->getMessage(),
+                            previous: $e,
+                            context: [
+                                'table' => $tableName,
+                                'keys_count' => count($chunk),
+                                'aws_error_code' => $e->getAwsErrorCode(),
+                            ]
+                        );
+                    } catch (\Throwable $e) {
+                        throw new ConnectionException(
+                            message: "Failed to connect to DynamoDB for BatchGetItem: " . $e->getMessage(),
+                            previous: $e,
+                            context: ['table' => $tableName]
+                        );
+                    }
 
                     if (isset($result['Responses'][$tableName])) {
                         foreach ($result['Responses'][$tableName] as $item) {
@@ -176,7 +208,36 @@ class DynamoDbConnection extends BaseConnection
                     $params['Key'] = $this->marshaler->marshalItem($params['Key']);
                 }
 
-                $result = $this->dynamoDbClient->getItem($params);
+                try {
+                    $result = $this->dynamoDbClient->getItem($params);
+                } catch (AwsDynamoDbException $e) {
+                    $tableName = $params['TableName'] ?? 'unknown';
+                    
+                    // Check for specific AWS error codes
+                    if ($e->getAwsErrorCode() === 'ResourceNotFoundException') {
+                        throw new TableNotFoundException(
+                            tableName: $tableName,
+                            previous: $e
+                        );
+                    }
+                    
+                    throw new OperationException(
+                        message: "GetItem failed for table '{$tableName}': " . $e->getMessage(),
+                        previous: $e,
+                        context: [
+                            'table' => $tableName,
+                            'key' => $params['Key'] ?? null,
+                            'aws_error_code' => $e->getAwsErrorCode(),
+                        ]
+                    );
+                } catch (\Throwable $e) {
+                    throw new ConnectionException(
+                        message: "Failed to connect to DynamoDB for GetItem: " . $e->getMessage(),
+                        previous: $e,
+                        context: ['table' => $params['TableName'] ?? 'unknown']
+                    );
+                }
+                
                 $items = isset($result['Item'])
                     ? [$this->marshaler->unmarshalItem($result['Item'])]
                     : [];
@@ -229,7 +290,15 @@ class DynamoDbConnection extends BaseConnection
                             break;
                         }
 
-                        $result = $this->dynamoDbClient->query($params);
+                        $result = $this->executeDynamoDbOperation(
+                            fn() => $this->dynamoDbClient->query($params),
+                            'Query',
+                            [
+                                'table' => $params['TableName'],
+                                'index' => $params['IndexName'] ?? 'Primary',
+                                'optimized' => true,
+                            ]
+                        );
                         $batchItems = array_map(
                             fn($item) => $this->marshaler->unmarshalItem($item),
                             $result['Items'] ?? []
@@ -264,7 +333,14 @@ class DynamoDbConnection extends BaseConnection
                     $items = array_slice($items, 0, $limit);
                 } else {
                     // Query normal: comportamento padrão
-                    $result = $this->dynamoDbClient->query($params);
+                    $result = $this->executeDynamoDbOperation(
+                        fn() => $this->dynamoDbClient->query($params),
+                        'Query',
+                        [
+                            'table' => $params['TableName'],
+                            'index' => $params['IndexName'] ?? 'Primary',
+                        ]
+                    );
 
                     // Paginação automática: se houver LastEvaluatedKey e não há Limit estrito,
                     // buscar mais páginas automaticamente (até 1MB ou limit definido)
@@ -304,7 +380,15 @@ class DynamoDbConnection extends BaseConnection
                                 $params['Limit'] = $limit - count($allItems);
                             }
 
-                            $nextResult = $this->dynamoDbClient->query($params);
+                            $nextResult = $this->executeDynamoDbOperation(
+                                fn() => $this->dynamoDbClient->query($params),
+                                'Query',
+                                [
+                                    'table' => $params['TableName'],
+                                    'index' => $params['IndexName'] ?? 'Primary',
+                                    'pagination' => true,
+                                ]
+                            );
                             $nextItems = array_map(
                                 fn($item) => $this->marshaler->unmarshalItem($item),
                                 $nextResult['Items'] ?? []
@@ -339,7 +423,11 @@ class DynamoDbConnection extends BaseConnection
                     ]);
                 }
 
-                $result = $this->dynamoDbClient->scan($params);
+                $result = $this->executeDynamoDbOperation(
+                    fn() => $this->dynamoDbClient->scan($params),
+                    'Scan',
+                    ['table' => $params['TableName']]
+                );
 
                 // Se Select for COUNT, retornar apenas o count no formato correto
                 if (isset($params['Select']) && $params['Select'] === 'COUNT') {
@@ -379,7 +467,11 @@ class DynamoDbConnection extends BaseConnection
                             $params['Limit'] = $limit - count($allItems);
                         }
 
-                        $nextResult = $this->dynamoDbClient->scan($params);
+                        $nextResult = $this->executeDynamoDbOperation(
+                            fn() => $this->dynamoDbClient->scan($params),
+                            'Scan',
+                            ['table' => $params['TableName'], 'pagination' => true]
+                        );
                         $nextItems = array_map(
                             fn($item) => $this->marshaler->unmarshalItem($item),
                             $nextResult['Items'] ?? []
@@ -400,7 +492,14 @@ class DynamoDbConnection extends BaseConnection
                 break;
 
             default:
-                throw new \RuntimeException("Unknown operation: {$operation}");
+                throw new QueryException(
+                    message: "Unknown DynamoDB operation: {$operation}",
+                    context: [
+                        'operation' => $operation,
+                        'params' => $params,
+                    ],
+                    suggestion: 'Valid operations are: GetItem, BatchGetItem, Query, and Scan'
+                );
         }
 
         // Converter para objetos (compatível com Laravel)
@@ -437,9 +536,11 @@ class DynamoDbConnection extends BaseConnection
 
         // Buscar metadados do DynamoDB
         try {
-            $result = $this->dynamoDbClient->describeTable([
-                'TableName' => $tableName,
-            ]);
+            $result = $this->executeDynamoDbOperation(
+                fn() => $this->dynamoDbClient->describeTable(['TableName' => $tableName]),
+                'DescribeTable',
+                ['table' => $tableName]
+            );
 
             $metadata = [
                 'Table' => $result['Table'] ?? [],
@@ -459,7 +560,10 @@ class DynamoDbConnection extends BaseConnection
             ];
 
             return $metadata;
-        } catch (\Exception $e) {
+        } catch (TableNotFoundException $e) {
+            // Re-throw TableNotFoundException
+            throw $e;
+        } catch (\Throwable $e) {
             // Se erro ao buscar metadados, retornar cache anterior se existir
             if (isset(self::$tableMetadataCache[$cacheKey])) {
                 return self::$tableMetadataCache[$cacheKey]['data'];
@@ -516,7 +620,11 @@ class DynamoDbConnection extends BaseConnection
                 $params['ExpressionAttributeValues'] = $this->marshaler->marshalItem($params['ExpressionAttributeValues']);
             }
 
-            $result = $this->dynamoDbClient->scan($params);
+            $result = $this->executeDynamoDbOperation(
+                fn() => $this->dynamoDbClient->scan($params),
+                'Scan',
+                ['table' => $tableName, 'count_only' => true]
+            );
             $totalCount += $result['Count'] ?? 0;
             $lastEvaluatedKey = $result['LastEvaluatedKey'] ?? null;
         } while ($lastEvaluatedKey !== null);
@@ -572,7 +680,11 @@ class DynamoDbConnection extends BaseConnection
                         $segmentParams['ExclusiveStartKey'] = $lastEvaluatedKey;
                     }
 
-                    $segmentResult = $this->dynamoDbClient->scan($segmentParams);
+                    $segmentResult = $this->executeDynamoDbOperation(
+                        fn() => $this->dynamoDbClient->scan($segmentParams),
+                        'Scan',
+                        ['table' => $tableName, 'segment' => $segment, 'parallel' => true]
+                    );
                     $segmentCount += $segmentResult['Count'] ?? 0;
                     $lastEvaluatedKey = $segmentResult['LastEvaluatedKey'] ?? null;
                 } while ($lastEvaluatedKey !== null);
@@ -606,7 +718,11 @@ class DynamoDbConnection extends BaseConnection
             return true;
         }
 
-        throw new \RuntimeException('Invalid insert query format');
+        throw new QueryException(
+            message: 'Invalid insert query format',
+            context: ['query' => $query, 'bindings' => $bindings],
+            suggestion: 'Use the Query Builder or Eloquent for insert operations'
+        );
     }
 
     /**
@@ -623,7 +739,11 @@ class DynamoDbConnection extends BaseConnection
 
         // Validar que o Item não está vazio
         if (empty($item)) {
-            throw new \RuntimeException("Cannot insert empty item into table '{$tableName}'");
+            throw new ValidationException(
+                message: "Cannot insert empty item into table '{$tableName}'",
+                context: ['table' => $tableName],
+                suggestion: 'Ensure the item contains at least the required key attributes'
+            );
         }
 
         // Log para debug
@@ -636,10 +756,14 @@ class DynamoDbConnection extends BaseConnection
             ]);
         }
 
-        $this->dynamoDbClient->putItem([
-            'TableName' => $tableName,
-            'Item' => $this->marshaler->marshalItem($item),
-        ]);
+        $this->executeDynamoDbOperation(
+            fn() => $this->dynamoDbClient->putItem([
+                'TableName' => $tableName,
+                'Item' => $this->marshaler->marshalItem($item),
+            ]),
+            'PutItem',
+            ['table' => $tableName, 'item_keys' => array_keys($item)]
+        );
     }
 
     /**
@@ -657,7 +781,11 @@ class DynamoDbConnection extends BaseConnection
             return 1; // Retornar número de linhas afetadas
         }
 
-        throw new \RuntimeException('Invalid update query format');
+        throw new QueryException(
+            message: 'Invalid update query format',
+            context: ['query' => $query, 'bindings' => $bindings],
+            suggestion: 'Use the Query Builder or Eloquent for update operations'
+        );
     }
 
     /**
@@ -669,16 +797,21 @@ class DynamoDbConnection extends BaseConnection
     protected function executeDynamoDbUpdateItem(array $compiled)
     {
         $params = $compiled['params'] ?? $compiled;
+        $tableName = $params['TableName'] ?? $this->getConfig('table');
 
-        $this->dynamoDbClient->updateItem([
-            'TableName' => $params['TableName'] ?? $this->getConfig('table'),
-            'Key' => $this->marshaler->marshalItem($params['Key']),
-            'UpdateExpression' => $params['UpdateExpression'] ?? '',
-            'ExpressionAttributeValues' => isset($params['ExpressionAttributeValues'])
-                ? $this->marshaler->marshalItem($params['ExpressionAttributeValues'])
-                : [],
-            'ExpressionAttributeNames' => $params['ExpressionAttributeNames'] ?? [],
-        ]);
+        $this->executeDynamoDbOperation(
+            fn() => $this->dynamoDbClient->updateItem([
+                'TableName' => $tableName,
+                'Key' => $this->marshaler->marshalItem($params['Key']),
+                'UpdateExpression' => $params['UpdateExpression'] ?? '',
+                'ExpressionAttributeValues' => isset($params['ExpressionAttributeValues'])
+                    ? $this->marshaler->marshalItem($params['ExpressionAttributeValues'])
+                    : [],
+                'ExpressionAttributeNames' => $params['ExpressionAttributeNames'] ?? [],
+            ]),
+            'UpdateItem',
+            ['table' => $tableName, 'key' => $params['Key'] ?? null]
+        );
     }
 
     /**
@@ -696,7 +829,11 @@ class DynamoDbConnection extends BaseConnection
             return 1; // Retornar número de linhas afetadas
         }
 
-        throw new \RuntimeException('Invalid delete query format');
+        throw new QueryException(
+            message: 'Invalid delete query format',
+            context: ['query' => $query, 'bindings' => $bindings],
+            suggestion: 'Use the Query Builder or Eloquent for delete operations'
+        );
     }
 
     /**
@@ -708,11 +845,16 @@ class DynamoDbConnection extends BaseConnection
     protected function executeDynamoDbDeleteItem(array $compiled)
     {
         $params = $compiled['params'] ?? $compiled;
+        $tableName = $params['TableName'] ?? $this->getConfig('table');
 
-        $this->dynamoDbClient->deleteItem([
-            'TableName' => $params['TableName'] ?? $this->getConfig('table'),
-            'Key' => $this->marshaler->marshalItem($params['Key']),
-        ]);
+        $this->executeDynamoDbOperation(
+            fn() => $this->dynamoDbClient->deleteItem([
+                'TableName' => $tableName,
+                'Key' => $this->marshaler->marshalItem($params['Key']),
+            ]),
+            'DeleteItem',
+            ['table' => $tableName, 'key' => $params['Key'] ?? null]
+        );
     }
 
     /**
@@ -733,5 +875,70 @@ class DynamoDbConnection extends BaseConnection
     public function getTableName()
     {
         return $this->getConfig('table');
+    }
+
+    /**
+     * Execute a DynamoDB operation with exception handling.
+     *
+     * @param callable $operation
+     * @param string $operationType
+     * @param array $context
+     * @return mixed
+     */
+    protected function executeDynamoDbOperation(callable $operation, string $operationType, array $context = [])
+    {
+        try {
+            return $operation();
+        } catch (AwsDynamoDbException $e) {
+            $awsErrorCode = $e->getAwsErrorCode();
+            $tableName = $context['table'] ?? 'unknown';
+            
+            // Handle specific AWS error codes
+            if ($awsErrorCode === 'ResourceNotFoundException') {
+                throw new TableNotFoundException(
+                    tableName: $tableName,
+                    previous: $e,
+                    context: $context
+                );
+            }
+            
+            if ($awsErrorCode === 'ProvisionedThroughputExceededException') {
+                throw new OperationException(
+                    message: "Throughput exceeded for table '{$tableName}'. Consider increasing provisioned capacity or using on-demand billing.",
+                    previous: $e,
+                    context: array_merge($context, [
+                        'aws_error_code' => $awsErrorCode,
+                        'operation' => $operationType,
+                    ])
+                );
+            }
+            
+            if ($awsErrorCode === 'RequestLimitExceeded') {
+                throw new OperationException(
+                    message: "Request limit exceeded for DynamoDB operation",
+                    previous: $e,
+                    context: array_merge($context, [
+                        'aws_error_code' => $awsErrorCode,
+                        'operation' => $operationType,
+                    ])
+                );
+            }
+            
+            // Generic AWS DynamoDB exception
+            throw new OperationException(
+                message: "{$operationType} failed: " . $e->getMessage(),
+                previous: $e,
+                context: array_merge($context, [
+                    'aws_error_code' => $awsErrorCode,
+                    'operation' => $operationType,
+                ])
+            );
+        } catch (\Throwable $e) {
+            throw new ConnectionException(
+                message: "Failed to connect to DynamoDB for {$operationType}: " . $e->getMessage(),
+                previous: $e,
+                context: $context
+            );
+        }
     }
 }
