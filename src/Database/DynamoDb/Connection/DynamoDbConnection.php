@@ -8,10 +8,21 @@ use Aws\DynamoDb\Marshaler;
 use Joaquim\LaravelDynamoDb\Database\DynamoDb\Query\Grammar as DynamoDbGrammar;
 use Joaquim\LaravelDynamoDb\Database\DynamoDb\Query\Processor as DynamoDbProcessor;
 
+/**
+ * DynamoDB Connection Class.
+ * 
+ * Esta classe gerencia a conexão com o DynamoDB e executa operações de banco de dados.
+ * Substitui a conexão PDO padrão do Laravel com operações específicas do DynamoDB.
+ * 
+ * @package Joaquim\LaravelDynamoDb\Database\DynamoDb\Connection
+ * @since 1.0.0
+ */
 class DynamoDbConnection extends BaseConnection
 {
     /**
      * DynamoDB Client instance.
+     * 
+     * Instância do cliente AWS SDK para comunicação com o DynamoDB.
      *
      * @var DynamoDbClient
      */
@@ -19,6 +30,8 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Marshaler instance.
+     * 
+     * Responsável pela conversão de tipos PHP para tipos DynamoDB e vice-versa.
      *
      * @var Marshaler
      */
@@ -26,9 +39,24 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Create a new DynamoDB connection instance.
+     * 
+     * Inicializa a conexão com o DynamoDB, configurando o cliente AWS SDK
+     * e o marshaler para conversão de tipos de dados.
      *
-     * @param DynamoDbClient $client
-     * @param array $config
+     * @param DynamoDbClient $client Cliente AWS DynamoDB configurado
+     * @param array $config Configurações da conexão incluindo table, region, credentials
+     * 
+     * @example
+     * $client = new DynamoDbClient([
+     *     'region' => 'us-east-1',
+     *     'version' => 'latest'
+     * ]);
+     * $connection = new DynamoDbConnection($client, [
+     *     'table' => 'users',
+     *     'region' => 'us-east-1'
+     * ]);
+     * 
+     * @since 1.0.0
      */
     public function __construct(DynamoDbClient $client, array $config = [])
     {
@@ -48,8 +76,13 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Get the default query grammar instance.
+     * 
+     * Retorna a instância do Grammar customizado para DynamoDB que compila
+     * queries do Laravel em operações DynamoDB (GetItem, Query, Scan).
      *
-     * @return DynamoDbGrammar
+     * @return DynamoDbGrammar Instância do grammar DynamoDB
+     * 
+     * @since 1.0.0
      */
     protected function getDefaultQueryGrammar()
     {
@@ -58,8 +91,13 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Get the default post processor instance.
+     * 
+     * Retorna o processador que converte resultados DynamoDB para
+     * o formato esperado pelo Laravel.
      *
-     * @return DynamoDbProcessor
+     * @return DynamoDbProcessor Instância do processor DynamoDB
+     * 
+     * @since 1.0.0
      */
     protected function getDefaultPostProcessor()
     {
@@ -68,8 +106,17 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Get the DynamoDB Client instance.
+     * 
+     * Retorna o cliente AWS SDK configurado para realizar operações
+     * diretamente no DynamoDB.
      *
-     * @return DynamoDbClient
+     * @return DynamoDbClient Cliente AWS DynamoDB
+     * 
+     * @example
+     * $client = $connection->getDynamoDbClient();
+     * $result = $client->describeTable(['TableName' => 'users']);
+     * 
+     * @since 1.0.0
      */
     public function getDynamoDbClient(): DynamoDbClient
     {
@@ -78,8 +125,17 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Get the Marshaler instance.
+     * 
+     * Retorna o marshaler usado para conversão automática entre tipos PHP
+     * e tipos DynamoDB (String, Number, Binary, List, Map, etc).
      *
-     * @return Marshaler
+     * @return Marshaler Instância do marshaler AWS SDK
+     * 
+     * @example
+     * $marshaler = $connection->getMarshaler();
+     * $item = $marshaler->marshalItem(['id' => 1, 'name' => 'John']);
+     * 
+     * @since 1.0.0
      */
     public function getMarshaler(): Marshaler
     {
@@ -88,11 +144,25 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Execute a select query.
+     * 
+     * Executa uma query de seleção compilada pelo Grammar. O parâmetro $query
+     * é um array compilado (não uma string SQL) contendo a operação DynamoDB
+     * (GetItem, Query, Scan, BatchGetItem) e seus parâmetros.
      *
-     * @param string $query
-     * @param array $bindings
-     * @param bool $useReadPdo
-     * @return array
+     * @param string|array $query Array compilado com operação e parâmetros DynamoDB
+     * @param array $bindings Não utilizado (mantido por compatibilidade com Laravel)
+     * @param bool $useReadPdo Não utilizado (mantido por compatibilidade com Laravel)
+     * 
+     * @return array Array de objetos com os resultados da query
+     * 
+     * @throws \RuntimeException Se $query não for um array (DynamoDB não suporta SQL)
+     * 
+     * @example
+     * // Executado internamente pelo Query Builder
+     * $compiled = ['operation' => 'Query', 'params' => ['TableName' => 'users', ...]];
+     * $results = $connection->select($compiled);
+     * 
+     * @since 1.0.0
      */
     public function select($query, $bindings = [], $useReadPdo = true)
     {
@@ -106,9 +176,29 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Execute a select query against DynamoDB.
+     * 
+     * Executa a operação DynamoDB apropriada (GetItem, Query, Scan, BatchGetItem)
+     * baseada no array compilado. Gerencia paginação automática e conversão de resultados.
      *
-     * @param array $compiled
-     * @return array
+     * @param array $compiled Array contendo 'operation' e 'params' da query compilada
+     * 
+     * @return array Array de objetos com os itens retornados pelo DynamoDB
+     * 
+     * @throws \RuntimeException Se a operação for desconhecida
+     * 
+     * @example
+     * $compiled = [
+     *     'operation' => 'Query',
+     *     'params' => [
+     *         'TableName' => 'users',
+     *         'KeyConditionExpression' => '#pk = :pk',
+     *         'ExpressionAttributeNames' => ['#pk' => 'id'],
+     *         'ExpressionAttributeValues' => [':pk' => 'user123']
+     *     ]
+     * ];
+     * $results = $this->executeDynamoDbSelect($compiled);
+     * 
+     * @since 1.0.0
      */
     protected function executeDynamoDbSelect(array $compiled)
     {
@@ -409,6 +499,9 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Cache de metadados de tabelas.
+     * 
+     * Armazena metadados (estrutura, índices, keys) de tabelas DynamoDB
+     * para evitar múltiplas chamadas describeTable.
      *
      * @var array
      */
@@ -416,10 +509,24 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Get table metadata (structure, indexes) with caching.
+     * 
+     * Obtém metadados completos da tabela DynamoDB incluindo KeySchema,
+     * AttributeDefinitions, GSI, LSI e status. Usa cache de 1 hora para
+     * melhorar performance.
      *
-     * @param string $tableName
-     * @param bool $forceRefresh Force refresh cache
-     * @return array
+     * @param string $tableName Nome da tabela DynamoDB
+     * @param bool $forceRefresh Force atualização do cache
+     * 
+     * @return array Array com metadados incluindo Table, KeySchema, AttributeDefinitions, GlobalSecondaryIndexes, LocalSecondaryIndexes
+     * 
+     * @throws \Exception Se não conseguir obter metadados e não houver cache
+     * 
+     * @example
+     * $metadata = $connection->getTableMetadata('users');
+     * $partitionKey = $metadata['KeySchema'][0]['AttributeName'];
+     * $gsiIndexes = $metadata['GlobalSecondaryIndexes'];
+     * 
+     * @since 1.0.0
      */
     public function getTableMetadata(string $tableName, bool $forceRefresh = false): array
     {
@@ -471,9 +578,22 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Clear table metadata cache.
+     * 
+     * Limpa o cache de metadados de tabela. Útil quando a estrutura
+     * da tabela é modificada (índices adicionados/removidos).
      *
-     * @param string|null $tableName If null, clears all cache
+     * @param string|null $tableName Nome da tabela para limpar cache. Se null, limpa todo o cache
+     * 
      * @return void
+     * 
+     * @example
+     * // Limpar cache de uma tabela específica
+     * $connection->clearMetadataCache('users');
+     * 
+     * // Limpar todo o cache
+     * $connection->clearMetadataCache();
+     * 
+     * @since 1.0.0
      */
     public function clearMetadataCache(?string $tableName = null): void
     {
@@ -486,10 +606,27 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Get the total count of items in a table using efficient COUNT scan.
+     * 
+     * Conta o total de itens na tabela usando Scan com Select=COUNT,
+     * o que é mais eficiente que retornar todos os itens. Gerencia
+     * paginação automática para contar toda a tabela.
      *
-     * @param string $tableName
-     * @param array $filterExpression Optional filter expression
-     * @return int
+     * @param string $tableName Nome da tabela DynamoDB
+     * @param array $filterExpression Expressão de filtro opcional (FilterExpression, ExpressionAttributeNames, ExpressionAttributeValues)
+     * 
+     * @return int Total de itens na tabela
+     * 
+     * @example
+     * // Contar todos os itens
+     * $total = $connection->countItems('users');
+     * 
+     * // Contar com filtro
+     * $activeCount = $connection->countItems('users', [
+     *     'FilterExpression' => 'status = :status',
+     *     'ExpressionAttributeValues' => [':status' => 'active']
+     * ]);
+     * 
+     * @since 1.0.0
      */
     public function countItems(string $tableName, array $filterExpression = []): int
     {
@@ -526,11 +663,30 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Count items using parallel scans for better performance on large tables.
+     * 
+     * Conta itens usando Parallel Scan (divide a tabela em segmentos) para
+     * melhor performance em tabelas grandes. Cada segmento é processado
+     * sequencialmente (paralelização real requer processos separados).
      *
-     * @param string $tableName
-     * @param int $segments Number of parallel segments (default: 4)
-     * @param array $filterExpression Optional filter expression
-     * @return int
+     * @param string $tableName Nome da tabela DynamoDB
+     * @param int $segments Número de segmentos paralelos (1-100, padrão: 4)
+     * @param array $filterExpression Expressão de filtro opcional
+     * 
+     * @return int Total de itens contados em todos os segmentos
+     * 
+     * @throws \InvalidArgumentException Se segments não estiver entre 1 e 100
+     * 
+     * @example
+     * // Contar com 8 segmentos para melhor performance
+     * $total = $connection->countItemsParallel('users', 8);
+     * 
+     * // Com filtro
+     * $activeCount = $connection->countItemsParallel('users', 4, [
+     *     'FilterExpression' => 'status = :status',
+     *     'ExpressionAttributeValues' => [':status' => 'active']
+     * ]);
+     * 
+     * @since 1.0.0
      */
     public function countItemsParallel(string $tableName, int $segments = 4, array $filterExpression = []): int
     {
@@ -593,10 +749,28 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Execute an insert statement.
+     * 
+     * Executa uma operação PutItem no DynamoDB. O parâmetro $query é um array
+     * compilado pelo Grammar contendo TableName e Item.
      *
-     * @param string $query
-     * @param array $bindings
-     * @return bool
+     * @param string|array $query Array compilado com parâmetros do PutItem
+     * @param array $bindings Não utilizado (mantido por compatibilidade com Laravel)
+     * 
+     * @return bool Sempre retorna true em caso de sucesso
+     * 
+     * @throws \RuntimeException Se $query não for um array válido
+     * 
+     * @example
+     * // Executado internamente pelo Query Builder
+     * $compiled = [
+     *     'params' => [
+     *         'TableName' => 'users',
+     *         'Item' => ['id' => 'user123', 'name' => 'John', 'email' => 'john@example.com']
+     *     ]
+     * ];
+     * $connection->insert($compiled);
+     * 
+     * @since 1.0.0
      */
     public function insert($query, $bindings = [])
     {
@@ -611,9 +785,17 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Execute PutItem operation.
+     * 
+     * Insere ou substitui um item completo na tabela DynamoDB.
+     * Realiza marshaling automático dos dados antes de enviar.
      *
-     * @param array $compiled
+     * @param array $compiled Array compilado contendo params com TableName e Item
+     * 
      * @return void
+     * 
+     * @throws \RuntimeException Se Item estiver vazio
+     * 
+     * @since 1.0.0
      */
     protected function executeDynamoDbPutItem(array $compiled)
     {
@@ -644,10 +826,31 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Execute an update statement.
+     * 
+     * Executa uma operação UpdateItem no DynamoDB, atualizando atributos
+     * específicos de um item existente.
      *
-     * @param string $query
-     * @param array $bindings
-     * @return int
+     * @param string|array $query Array compilado com parâmetros do UpdateItem
+     * @param array $bindings Não utilizado (mantido por compatibilidade com Laravel)
+     * 
+     * @return int Número de linhas afetadas (sempre 1 no DynamoDB)
+     * 
+     * @throws \RuntimeException Se $query não for um array válido
+     * 
+     * @example
+     * // Executado internamente pelo Query Builder
+     * $compiled = [
+     *     'params' => [
+     *         'TableName' => 'users',
+     *         'Key' => ['id' => 'user123'],
+     *         'UpdateExpression' => 'SET #name = :name',
+     *         'ExpressionAttributeNames' => ['#name' => 'name'],
+     *         'ExpressionAttributeValues' => [':name' => 'John Updated']
+     *     ]
+     * ];
+     * $connection->update($compiled);
+     * 
+     * @since 1.0.0
      */
     public function update($query, $bindings = [])
     {
@@ -662,9 +865,15 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Execute UpdateItem operation.
+     * 
+     * Atualiza atributos específicos de um item no DynamoDB usando
+     * UpdateExpression. Realiza marshaling automático dos valores.
      *
-     * @param array $compiled
+     * @param array $compiled Array compilado contendo params com TableName, Key, UpdateExpression, etc
+     * 
      * @return void
+     * 
+     * @since 1.0.0
      */
     protected function executeDynamoDbUpdateItem(array $compiled)
     {
@@ -683,10 +892,28 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Execute a delete statement.
+     * 
+     * Executa uma operação DeleteItem no DynamoDB, removendo um item
+     * específico identificado por sua chave primária.
      *
-     * @param string $query
-     * @param array $bindings
-     * @return int
+     * @param string|array $query Array compilado com parâmetros do DeleteItem
+     * @param array $bindings Não utilizado (mantido por compatibilidade com Laravel)
+     * 
+     * @return int Número de linhas afetadas (sempre 1 no DynamoDB)
+     * 
+     * @throws \RuntimeException Se $query não for um array válido
+     * 
+     * @example
+     * // Executado internamente pelo Query Builder
+     * $compiled = [
+     *     'params' => [
+     *         'TableName' => 'users',
+     *         'Key' => ['id' => 'user123']
+     *     ]
+     * ];
+     * $connection->delete($compiled);
+     * 
+     * @since 1.0.0
      */
     public function delete($query, $bindings = [])
     {
@@ -701,9 +928,15 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Execute DeleteItem operation.
+     * 
+     * Remove um item do DynamoDB identificado por sua chave primária.
+     * Realiza marshaling automático da chave.
      *
-     * @param array $compiled
+     * @param array $compiled Array compilado contendo params com TableName e Key
+     * 
      * @return void
+     * 
+     * @since 1.0.0
      */
     protected function executeDynamoDbDeleteItem(array $compiled)
     {
@@ -717,8 +950,17 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Get a new query builder instance.
+     * 
+     * Cria uma nova instância do Query Builder customizado para DynamoDB
+     * que compila queries Eloquent em operações DynamoDB.
      *
-     * @return \Illuminate\Database\Query\Builder
+     * @return \Joaquim\LaravelDynamoDb\Database\DynamoDb\Query\Builder Query builder DynamoDB
+     * 
+     * @example
+     * $query = $connection->query();
+     * $users = $query->from('users')->where('status', 'active')->get();
+     * 
+     * @since 1.0.0
      */
     public function query()
     {
@@ -727,8 +969,15 @@ class DynamoDbConnection extends BaseConnection
 
     /**
      * Get the table name.
+     * 
+     * Retorna o nome da tabela DynamoDB configurada para esta conexão.
      *
-     * @return string
+     * @return string Nome da tabela DynamoDB
+     * 
+     * @example
+     * $tableName = $connection->getTableName(); // 'users'
+     * 
+     * @since 1.0.0
      */
     public function getTableName()
     {

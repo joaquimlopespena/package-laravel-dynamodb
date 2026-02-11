@@ -7,10 +7,28 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Database\Connection;
 use Joaquim\LaravelDynamoDb\Database\DynamoDb\Connector\DynamoDbConnector;
 
+/**
+ * DynamoDB Service Provider.
+ * 
+ * Registra o driver DynamoDB no Laravel e configura conexões.
+ * Este service provider é automaticamente carregado pelo Laravel
+ * através da configuração em composer.json.
+ * 
+ * @package Joaquim\LaravelDynamoDb
+ * @since 1.0.0
+ */
 class DynamoDbServiceProvider extends ServiceProvider
 {
     /**
      * Register services.
+     * 
+     * Registra o connector DynamoDB no ConnectionFactory do Laravel
+     * e mescla configurações do pacote com o aplicativo.
+     * Executado durante a fase de registro do container.
+     * 
+     * @return void
+     * 
+     * @since 1.0.0
      */
     public function register(): void
     {
@@ -35,6 +53,18 @@ class DynamoDbServiceProvider extends ServiceProvider
 
     /**
      * Bootstrap services.
+     * 
+     * Publica arquivos de configuração e mescla conexões DynamoDB
+     * no config/database.php do Laravel. Executado após todos os
+     * providers serem registrados.
+     * 
+     * @return void
+     * 
+     * @example
+     * // Publicar configuração
+     * php artisan vendor:publish --tag=dynamodb-config
+     * 
+     * @since 1.0.0
      */
     public function boot(): void
     {
@@ -49,7 +79,15 @@ class DynamoDbServiceProvider extends ServiceProvider
 
     /**
      * Mesclar conexões DynamoDB do config para config/database.php
-     * Suporta tanto database-dynamodb.php (novo) quanto dynamodb.php (legado)
+     * 
+     * Carrega configurações de database-dynamodb.php (ou dynamodb.php para
+     * compatibilidade) e adiciona as conexões DynamoDB em config('database.connections').
+     * Cria também um alias 'dynamodb' apontando para a conexão padrão.
+     * Suporta tanto database-dynamodb.php (novo) quanto dynamodb.php (legado).
+     * 
+     * @return void
+     * 
+     * @since 1.0.0
      */
     protected function mergeDynamoDbConnections(): void
     {

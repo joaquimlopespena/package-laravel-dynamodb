@@ -7,10 +7,23 @@ use Illuminate\Database\Query\Grammars\Grammar as BaseGrammar;
 use Joaquim\LaravelDynamoDb\Database\DynamoDb\Eloquent\Model as DynamoDbModel;
 use Joaquim\LaravelDynamoDb\Database\DynamoDb\Index\IndexResolver;
 
+/**
+ * DynamoDB Query Grammar Class.
+ * 
+ * Compila queries do Laravel/Eloquent em operações DynamoDB nativas.
+ * Resolve automaticamente qual operação usar (GetItem, Query, Scan, BatchGetItem)
+ * baseado nas condições da query e índices disponíveis.
+ * 
+ * @package Joaquim\LaravelDynamoDb\Database\DynamoDb\Query
+ * @since 1.0.0
+ */
 class Grammar extends BaseGrammar
 {
     /**
      * IndexResolver instance.
+     * 
+     * Resolve automaticamente o melhor índice (Primary, GSI ou LSI)
+     * para executar uma query baseado nas condições WHERE.
      *
      * @var IndexResolver|null
      */
@@ -18,9 +31,16 @@ class Grammar extends BaseGrammar
 
     /**
      * Get or create IndexResolver.
+     * 
+     * Obtém ou cria uma instância do IndexResolver para o model associado
+     * à query. O IndexResolver analisa índices disponíveis e escolhe o mais
+     * eficiente para executar a query.
      *
-     * @param BaseBuilder|null $query
-     * @return IndexResolver|null
+     * @param BaseBuilder|null $query Query builder com model associado
+     * 
+     * @return IndexResolver|null Instância do resolver ou null se não houver model
+     * 
+     * @since 1.0.0
      */
     protected function getIndexResolver(?BaseBuilder $query = null): ?IndexResolver
     {
@@ -46,9 +66,15 @@ class Grammar extends BaseGrammar
 
     /**
      * Get model instance from query.
+     * 
+     * Extrai a instância do Model Eloquent do Query Builder,
+     * necessária para resolver índices e configurações específicas do DynamoDB.
      *
-     * @param BaseBuilder $query
-     * @return DynamoDbModel|null
+     * @param BaseBuilder $query Query builder do Laravel
+     * 
+     * @return DynamoDbModel|null Model DynamoDB ou null se não for DynamoDbBuilder
+     * 
+     * @since 1.0.0
      */
     protected function getModelFromQuery(BaseBuilder $query): ?DynamoDbModel
     {
@@ -64,9 +90,27 @@ class Grammar extends BaseGrammar
     }
     /**
      * Compile a select query into DynamoDB operation.
+     * 
+     * Analisa a query e compila para a operação DynamoDB mais eficiente:
+     * - GetItem: busca por chave primária simples
+     * - BatchGetItem: busca múltiplos itens por chaves primárias
+     * - Query: busca com índice (Primary, GSI ou LSI)
+     * - Scan: varredura completa da tabela (menos eficiente)
      *
-     * @param BaseBuilder $query
-     * @return array
+     * @param BaseBuilder $query Query builder do Laravel
+     * 
+     * @return array Array com 'operation' (tipo de operação) e 'params' (parâmetros DynamoDB)
+     * 
+     * @example
+     * // GetItem
+     * $compiled = $grammar->compileSelect($query->where('id', 'user123'));
+     * // ['operation' => 'GetItem', 'params' => ['TableName' => 'users', 'Key' => ['id' => 'user123']]]
+     * 
+     * // Query com índice
+     * $compiled = $grammar->compileSelect($query->where('status', 'active'));
+     * // ['operation' => 'Query', 'params' => ['TableName' => 'users', 'IndexName' => 'status-index', ...]]
+     * 
+     * @since 1.0.0
      */
     public function compileSelect(BaseBuilder $query)
     {
@@ -107,9 +151,15 @@ class Grammar extends BaseGrammar
 
     /**
      * Determine which DynamoDB operation to use.
+     * 
+     * Analisa as condições WHERE da query e determina a operação DynamoDB
+     * mais eficiente. Usa IndexResolver para encontrar índices disponíveis.
      *
-     * @param BaseBuilder $query
-     * @return string
+     * @param BaseBuilder $query Query builder com condições WHERE
+     * 
+     * @return string Nome da operação: 'GetItem', 'BatchGetItem', 'Query' ou 'Scan'
+     * 
+     * @since 1.0.0
      */
     protected function determineOperation(BaseBuilder $query)
     {
@@ -156,10 +206,16 @@ class Grammar extends BaseGrammar
 
     /**
      * Compile BatchGetItem operation.
+     * 
+     * Compila uma operação BatchGetItem para buscar múltiplos itens
+     * por suas chaves primárias. Limitado a 100 itens por requisição.
      *
-     * @param BaseBuilder $query
-     * @param array $params
-     * @return array
+     * @param BaseBuilder $query Query com whereIn na partition key
+     * @param array $params Parâmetros base incluindo TableName
+     * 
+     * @return array Parâmetros completos para BatchGetItem
+     * 
+     * @since 1.0.0
      */
     protected function compileBatchGetItem(BaseBuilder $query, array $params)
     {
@@ -183,10 +239,16 @@ class Grammar extends BaseGrammar
 
     /**
      * Compile GetItem operation.
+     * 
+     * Compila uma operação GetItem para buscar um único item
+     * por sua chave primária. A operação mais eficiente no DynamoDB.
      *
-     * @param BaseBuilder $query
-     * @param array $params
-     * @return array
+     * @param BaseBuilder $query Query com where na partition key
+     * @param array $params Parâmetros base incluindo TableName
+     * 
+     * @return array Parâmetros completos para GetItem com Key
+     * 
+     * @since 1.0.0
      */
     protected function compileGetItem(BaseBuilder $query, array $params)
     {
@@ -206,10 +268,23 @@ class Grammar extends BaseGrammar
 
     /**
      * Compile Query operation.
+     * 
+     * Compila uma operação Query usando índice (Primary Key, GSI ou LSI).
+     * Query é muito mais eficiente que Scan pois usa índices para busca.
+     * Compila KeyConditionExpression para condições do índice e FilterExpression
+     * para filtros adicionais.
      *
-     * @param BaseBuilder $query
-     * @param array $params
-     * @return array
+     * @param BaseBuilder $query Query builder do Laravel
+     * @param array $params Parâmetros base incluindo TableName
+     * 
+     * @return array Parâmetros completos para Query incluindo KeyConditionExpression, FilterExpression, IndexName, etc
+     * 
+     * @example
+     * // Query com GSI
+     * $params = $this->compileQuery($query->where('status', 'active')->where('created_at', '>', $date));
+     * // Usa status-created_at-index se disponível
+     * 
+     * @since 1.0.0
      */
     protected function compileQuery(BaseBuilder $query, array $params)
     {
@@ -320,10 +395,17 @@ class Grammar extends BaseGrammar
 
     /**
      * Compile key conditions into KeyConditionExpression.
+     * 
+     * Compila condições de chave (partition key e sort key) em KeyConditionExpression.
+     * Partition key sempre usa igualdade (=). Sort key pode usar operadores de range
+     * (<, <=, >, >=, between, begins_with).
      *
-     * @param array $keyConditions
-     * @param array $params
-     * @return array
+     * @param array $keyConditions Array de condições de chave do IndexResolver
+     * @param array $params Referência aos parâmetros da query (não modificado aqui)
+     * 
+     * @return array Array com 'expression', 'attributeNames' e 'attributeValues'
+     * 
+     * @since 1.0.0
      */
     protected function compileKeyConditions(array $keyConditions, array &$params): array
     {
@@ -376,10 +458,17 @@ class Grammar extends BaseGrammar
 
     /**
      * Get remaining filters that weren't used in key conditions.
+     * 
+     * Filtra condições WHERE que não foram usadas como KeyConditionExpression
+     * para usar como FilterExpression. FilterExpression é aplicado após a query
+     * e consome RCU (Read Capacity Units).
      *
-     * @param BaseBuilder $query
-     * @param array $keyConditions
-     * @return array
+     * @param BaseBuilder $query Query builder com todas as condições
+     * @param array $keyConditions Condições usadas em KeyConditionExpression
+     * 
+     * @return array Array de condições WHERE restantes
+     * 
+     * @since 1.0.0
      */
     protected function getRemainingFilters(BaseBuilder $query, array $keyConditions): array
     {
@@ -392,10 +481,16 @@ class Grammar extends BaseGrammar
 
     /**
      * Create a query builder with specific where clauses.
+     * 
+     * Clona o query builder e substitui as condições WHERE.
+     * Útil para compilar FilterExpression separadamente das KeyConditions.
      *
-     * @param BaseBuilder $query
-     * @param array $wheres
-     * @return BaseBuilder
+     * @param BaseBuilder $query Query builder original
+     * @param array $wheres Array de condições WHERE para usar
+     * 
+     * @return BaseBuilder Novo query builder com condições especificadas
+     * 
+     * @since 1.0.0
      */
     protected function createQueryFromWheres(BaseBuilder $query, array $wheres): BaseBuilder
     {
@@ -406,10 +501,17 @@ class Grammar extends BaseGrammar
 
     /**
      * Compile Scan operation.
+     * 
+     * Compila uma operação Scan que varre toda a tabela.
+     * Esta é a operação menos eficiente do DynamoDB e deve ser evitada
+     * em produção. Use índices sempre que possível.
      *
-     * @param BaseBuilder $query
-     * @param array $params
-     * @return array
+     * @param BaseBuilder $query Query builder do Laravel
+     * @param array $params Parâmetros base incluindo TableName
+     * 
+     * @return array Parâmetros completos para Scan com FilterExpression
+     * 
+     * @since 1.0.0
      */
     protected function compileScan(BaseBuilder $query, array $params)
     {
@@ -440,10 +542,17 @@ class Grammar extends BaseGrammar
 
     /**
      * Add ProjectionExpression to params if query has specific columns selected.
+     * 
+     * Adiciona ProjectionExpression aos parâmetros quando a query especifica
+     * colunas específicas (select). Reduz uso de RCU retornando apenas
+     * os atributos necessários.
      *
-     * @param BaseBuilder $query
-     * @param array $params
+     * @param BaseBuilder $query Query com colunas especificadas
+     * @param array $params Referência aos parâmetros (modificado diretamente)
+     * 
      * @return void
+     * 
+     * @since 1.0.0
      */
     protected function addProjectionExpression(BaseBuilder $query, array &$params): void
     {
@@ -486,10 +595,17 @@ class Grammar extends BaseGrammar
 
     /**
      * Compile where clauses to FilterExpression for DynamoDB.
+     * 
+     * Compila condições WHERE do Laravel em FilterExpression do DynamoDB.
+     * Suporta operadores básicos (=, <>, <, <=, >, >=) e LIKE (usando contains).
+     * FilterExpression é aplicado após a query e consome RCU.
      *
-     * @param BaseBuilder $query
+     * @param BaseBuilder $query Query builder com condições WHERE
      * @param int $baseCounter Contador base para evitar conflitos com KeyConditionExpression
-     * @return array
+     * 
+     * @return array Array com 'expression', 'attributeNames' e 'attributeValues'
+     * 
+     * @since 1.0.0
      */
     protected function compileWheresForDynamoDb(BaseBuilder $query, int $baseCounter = 0): array
     {
@@ -552,9 +668,15 @@ class Grammar extends BaseGrammar
 
     /**
      * Convert SQL operator to DynamoDB operator.
+     * 
+     * Converte operadores SQL padrão para operadores suportados pelo DynamoDB.
+     * DynamoDB usa <> em vez de != para desigualdade.
      *
-     * @param string $operator
-     * @return string
+     * @param string $operator Operador SQL (=, !=, <, <=, >, >=)
+     * 
+     * @return string Operador DynamoDB correspondente
+     * 
+     * @since 1.0.0
      */
     protected function convertOperator(string $operator): string
     {
@@ -571,10 +693,26 @@ class Grammar extends BaseGrammar
 
     /**
      * Compile an insert statement.
+     * 
+     * Compila uma operação de insert (PutItem) para DynamoDB.
+     * Suporta tanto insert único quanto batch insert (múltiplos itens).
      *
-     * @param BaseBuilder $query
-     * @param array $values
-     * @return array
+     * @param BaseBuilder $query Query builder do Laravel
+     * @param array $values Array de valores a inserir (pode ser array simples ou array de arrays para batch)
+     * 
+     * @return array Array com params para PutItem ou array de arrays para batch insert
+     * 
+     * @example
+     * // Insert único
+     * $compiled = $grammar->compileInsert($query, ['id' => 'user123', 'name' => 'John']);
+     * 
+     * // Batch insert
+     * $compiled = $grammar->compileInsert($query, [
+     *     ['id' => 'user1', 'name' => 'John'],
+     *     ['id' => 'user2', 'name' => 'Jane']
+     * ]);
+     * 
+     * @since 1.0.0
      */
     public function compileInsert(BaseBuilder $query, array $values)
     {
@@ -601,10 +739,23 @@ class Grammar extends BaseGrammar
 
     /**
      * Compile an update statement.
+     * 
+     * Compila uma operação UpdateItem para atualizar atributos específicos
+     * de um item existente. Usa UpdateExpression (SET) para modificar apenas
+     * os campos especificados.
      *
-     * @param BaseBuilder $query
-     * @param array $values
-     * @return array
+     * @param BaseBuilder $query Query builder com WHERE na chave primária
+     * @param array $values Array associativo de campos e valores a atualizar
+     * 
+     * @return array Array com params para UpdateItem incluindo Key, UpdateExpression, ExpressionAttributeNames e ExpressionAttributeValues
+     * 
+     * @example
+     * $compiled = $grammar->compileUpdate(
+     *     $query->where('id', 'user123'),
+     *     ['name' => 'John Updated', 'email' => 'john.updated@example.com']
+     * );
+     * 
+     * @since 1.0.0
      */
     public function compileUpdate(BaseBuilder $query, array $values)
     {
@@ -638,9 +789,17 @@ class Grammar extends BaseGrammar
 
     /**
      * Compile a delete statement.
+     * 
+     * Compila uma operação DeleteItem para remover um item pela chave primária.
      *
-     * @param BaseBuilder $query
-     * @return array
+     * @param BaseBuilder $query Query builder com WHERE na chave primária
+     * 
+     * @return array Array com params para DeleteItem incluindo TableName e Key
+     * 
+     * @example
+     * $compiled = $grammar->compileDelete($query->where('id', 'user123'));
+     * 
+     * @since 1.0.0
      */
     public function compileDelete(BaseBuilder $query)
     {
@@ -656,9 +815,14 @@ class Grammar extends BaseGrammar
 
     /**
      * Get table name from query.
+     * 
+     * Extrai o nome da tabela do Query Builder.
      *
-     * @param BaseBuilder $query
-     * @return string
+     * @param BaseBuilder $query Query builder do Laravel
+     * 
+     * @return string Nome da tabela DynamoDB
+     * 
+     * @since 1.0.0
      */
     protected function getTableName(BaseBuilder $query): string
     {
@@ -667,9 +831,15 @@ class Grammar extends BaseGrammar
 
     /**
      * Extract key from where clauses (simplificado).
+     * 
+     * Extrai a chave primária (partition key e sort key se existir) das
+     * condições WHERE. Usado para operações GetItem, UpdateItem e DeleteItem.
      *
-     * @param BaseBuilder $query
-     * @return array
+     * @param BaseBuilder $query Query builder com WHERE na chave primária
+     * 
+     * @return array Array associativo com chave primária (partition key e sort key)
+     * 
+     * @since 1.0.0
      */
     protected function extractKeyFromWheres(BaseBuilder $query): array
     {
@@ -684,14 +854,20 @@ class Grammar extends BaseGrammar
 
     /**
      * Compile orderBy clause for DynamoDB Query operations.
+     * 
+     * Compila ordenação para operações Query no DynamoDB. DynamoDB só suporta
+     * ordenação nativa pelo Sort Key do índice sendo usado. Usa ScanIndexForward
+     * para controlar a direção (true = ascending, false = descending).
+     * 
+     * Ordenação por outros campos requer ordenação em memória após buscar resultados.
      *
-     * No DynamoDB, orderBy só funciona para operações Query e apenas pelo Sort Key do índice usado.
-     * Usa ScanIndexForward: true = ascending, false = descending.
-     *
-     * @param BaseBuilder $query
-     * @param array $params
-     * @param array $indexMatch
+     * @param BaseBuilder $query Query builder com orderBy
+     * @param array $params Referência aos parâmetros (modificado diretamente)
+     * @param array $indexMatch Informações do índice usado (contém sort_key)
+     * 
      * @return void
+     * 
+     * @since 1.0.0
      */
     protected function compileOrderBy(BaseBuilder $query, array &$params, array $indexMatch): void
     {
