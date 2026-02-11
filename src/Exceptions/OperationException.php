@@ -15,7 +15,8 @@ class OperationException extends DynamoDbException
     public function __construct(
         string $message = 'DynamoDB operation failed',
         ?\Throwable $previous = null,
-        array $context = []
+        array $context = [],
+        ?string $suggestion = null
     ) {
         parent::__construct(
             message: $message,
@@ -23,7 +24,7 @@ class OperationException extends DynamoDbException
             previous: $previous,
             context: $context,
             errorCode: 'OPERATION_ERROR',
-            suggestion: 'Review the operation parameters and AWS error details for more information.'
+            suggestion: $suggestion ?? 'Review the operation parameters and AWS error details for more information.'
         );
     }
 }

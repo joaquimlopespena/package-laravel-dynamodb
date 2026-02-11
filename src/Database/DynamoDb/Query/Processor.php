@@ -23,9 +23,9 @@ class Processor extends BaseProcessor
                 message: 'Invalid query results format',
                 context: [
                     'results_type' => gettype($results),
-                    'has_aggregate' => ! is_null($query->aggregate ?? null),
+                    'has_aggregate' => isset($query->aggregate),
                 ],
-                suggestion: 'Query results should be an array. This may indicate a problem with the query execution.'
+                suggestion: 'Query results should be an array. This may indicate a problem with the query execution. Verify the query builder is properly configured and the DynamoDB operation returned valid data.'
             );
         }
 

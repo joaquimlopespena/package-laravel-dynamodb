@@ -880,12 +880,13 @@ class DynamoDbConnection extends BaseConnection
 
             if ($awsErrorCode === 'ProvisionedThroughputExceededException') {
                 throw new OperationException(
-                    message: "Throughput exceeded for table '{$tableName}'. Consider increasing provisioned capacity or using on-demand billing.",
+                    message: "Throughput exceeded for table '{$tableName}'",
                     previous: $e,
                     context: array_merge($context, [
                         'aws_error_code' => $awsErrorCode,
                         'operation' => $operationType,
-                    ])
+                    ]),
+                    suggestion: 'Implement retry logic with exponential backoff as immediate mitigation. For long-term solutions, consider increasing provisioned capacity or using on-demand billing mode.'
                 );
             }
 
