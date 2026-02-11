@@ -49,6 +49,11 @@
             ]
         }
     },
+    "scripts": {
+        "test": "vendor/bin/phpunit",
+        "test-coverage": "vendor/bin/phpunit --coverage-html coverage",
+        "format": "vendor/bin/pint"
+    },
     "minimum-stability": "dev",
     "prefer-stable": true
 }
