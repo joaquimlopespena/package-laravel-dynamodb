@@ -2,8 +2,8 @@
 
 namespace Joaquim\LaravelDynamoDb\Database\DynamoDb\Query;
 
-use Illuminate\Database\Query\Processors\Processor as BaseProcessor;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Database\Query\Processors\Processor as BaseProcessor;
 use Joaquim\LaravelDynamoDb\Exceptions\OperationException;
 
 class Processor extends BaseProcessor
@@ -11,19 +11,19 @@ class Processor extends BaseProcessor
     /**
      * Process the results of a "select" query.
      *
-     * @param \Illuminate\Database\Query\Builder $query
-     * @param array $results
+     * @param  \Illuminate\Database\Query\Builder  $query
+     * @param  array  $results
      * @return array
      */
     public function processSelect($query, $results)
     {
         // Validate results
-        if (!is_array($results)) {
+        if (! is_array($results)) {
             throw new OperationException(
                 message: 'Invalid query results format',
                 context: [
                     'results_type' => gettype($results),
-                    'has_aggregate' => !is_null($query->aggregate ?? null),
+                    'has_aggregate' => ! is_null($query->aggregate ?? null),
                 ],
                 suggestion: 'Query results should be an array. This may indicate a problem with the query execution.'
             );
@@ -41,7 +41,6 @@ class Processor extends BaseProcessor
     /**
      * Process the results of an aggregate query.
      *
-     * @param  \Illuminate\Database\Query\Builder  $query
      * @param  array  $results
      * @return array
      */
@@ -66,6 +65,4 @@ class Processor extends BaseProcessor
         // Contar resultados para count()
         return [(object) ['aggregate' => count($results)]];
     }
-
-
 }

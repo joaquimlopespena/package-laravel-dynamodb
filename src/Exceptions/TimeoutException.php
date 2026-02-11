@@ -4,17 +4,13 @@ namespace Joaquim\LaravelDynamoDb\Exceptions;
 
 /**
  * Exception thrown when an operation times out.
- * 
+ *
  * This can occur when DynamoDB operations take too long to complete.
  */
 class TimeoutException extends DynamoDbException
 {
     /**
      * Create a new TimeoutException instance.
-     *
-     * @param string $message
-     * @param \Throwable|null $previous
-     * @param array $context
      */
     public function __construct(
         string $message = 'Operation timed out',

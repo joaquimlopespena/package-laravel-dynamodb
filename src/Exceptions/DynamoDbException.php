@@ -7,41 +7,28 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Base exception class for all DynamoDB-related exceptions.
- * 
+ *
  * Provides automatic logging and detailed context for debugging.
  */
 class DynamoDbException extends Exception
 {
     /**
      * Additional context data for the exception.
-     *
-     * @var array
      */
     protected array $context = [];
 
     /**
      * Custom error code.
-     *
-     * @var string|null
      */
     protected ?string $errorCode = null;
 
     /**
      * Suggestion for resolving the error.
-     *
-     * @var string|null
      */
     protected ?string $suggestion = null;
 
     /**
      * Create a new DynamoDbException instance.
-     *
-     * @param string $message
-     * @param int $code
-     * @param \Throwable|null $previous
-     * @param array $context
-     * @param string|null $errorCode
-     * @param string|null $suggestion
      */
     public function __construct(
         string $message = '',
@@ -63,12 +50,10 @@ class DynamoDbException extends Exception
 
     /**
      * Log the exception with context.
-     *
-     * @return void
      */
     protected function logException(): void
     {
-        if (!$this->shouldLog()) {
+        if (! $this->shouldLog()) {
             return;
         }
 
@@ -97,8 +82,6 @@ class DynamoDbException extends Exception
 
     /**
      * Determine if the exception should be logged.
-     *
-     * @return bool
      */
     protected function shouldLog(): bool
     {
@@ -107,9 +90,6 @@ class DynamoDbException extends Exception
 
     /**
      * Remove sensitive data from context.
-     *
-     * @param array $context
-     * @return array
      */
     protected function removeSensitiveData(array $context): array
     {
@@ -126,8 +106,6 @@ class DynamoDbException extends Exception
 
     /**
      * Get the exception context.
-     *
-     * @return array
      */
     public function getContext(): array
     {
@@ -136,8 +114,6 @@ class DynamoDbException extends Exception
 
     /**
      * Get the custom error code.
-     *
-     * @return string|null
      */
     public function getErrorCode(): ?string
     {
@@ -146,8 +122,6 @@ class DynamoDbException extends Exception
 
     /**
      * Get the suggestion for resolving the error.
-     *
-     * @return string|null
      */
     public function getSuggestion(): ?string
     {
@@ -156,8 +130,6 @@ class DynamoDbException extends Exception
 
     /**
      * Get a detailed error message with context.
-     *
-     * @return string
      */
     public function getDetailedMessage(): string
     {
@@ -171,8 +143,8 @@ class DynamoDbException extends Exception
             $message .= "\n\nSuggestion: {$this->suggestion}";
         }
 
-        if (!empty($this->context)) {
-            $message .= "\n\nContext: " . json_encode($this->context, JSON_PRETTY_PRINT);
+        if (! empty($this->context)) {
+            $message .= "\n\nContext: ".json_encode($this->context, JSON_PRETTY_PRINT);
         }
 
         return $message;

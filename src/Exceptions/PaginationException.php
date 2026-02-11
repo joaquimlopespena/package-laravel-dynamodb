@@ -4,17 +4,13 @@ namespace Joaquim\LaravelDynamoDb\Exceptions;
 
 /**
  * Exception thrown when pagination encounters an error.
- * 
+ *
  * This can occur when pagination tokens are invalid or expired.
  */
 class PaginationException extends DynamoDbException
 {
     /**
      * Create a new PaginationException instance.
-     *
-     * @param string $message
-     * @param \Throwable|null $previous
-     * @param array $context
      */
     public function __construct(
         string $message = 'Pagination failed',

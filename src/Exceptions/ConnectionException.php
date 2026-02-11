@@ -4,17 +4,13 @@ namespace Joaquim\LaravelDynamoDb\Exceptions;
 
 /**
  * Exception thrown when there are connection problems with DynamoDB.
- * 
+ *
  * This can occur due to network issues, invalid credentials, or service unavailability.
  */
 class ConnectionException extends DynamoDbException
 {
     /**
      * Create a new ConnectionException instance.
-     *
-     * @param string $message
-     * @param \Throwable|null $previous
-     * @param array $context
      */
     public function __construct(
         string $message = 'Failed to connect to DynamoDB',

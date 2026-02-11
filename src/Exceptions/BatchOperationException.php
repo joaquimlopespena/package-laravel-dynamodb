@@ -4,17 +4,13 @@ namespace Joaquim\LaravelDynamoDb\Exceptions;
 
 /**
  * Exception thrown when a batch operation fails.
- * 
+ *
  * This includes BatchGetItem, BatchWriteItem operations.
  */
 class BatchOperationException extends DynamoDbException
 {
     /**
      * Create a new BatchOperationException instance.
-     *
-     * @param string $message
-     * @param \Throwable|null $previous
-     * @param array $context
      */
     public function __construct(
         string $message = 'Batch operation failed',

@@ -4,7 +4,7 @@ namespace Joaquim\LaravelDynamoDb\Exceptions;
 
 /**
  * Exception thrown when a requested index is not found.
- * 
+ *
  * This occurs when trying to query using a Global or Local Secondary Index
  * that doesn't exist on the table.
  */
@@ -12,11 +12,6 @@ class IndexNotFoundException extends DynamoDbException
 {
     /**
      * Create a new IndexNotFoundException instance.
-     *
-     * @param string $indexName
-     * @param string $tableName
-     * @param \Throwable|null $previous
-     * @param array $context
      */
     public function __construct(
         string $indexName = '',

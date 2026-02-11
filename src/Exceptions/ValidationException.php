@@ -4,7 +4,7 @@ namespace Joaquim\LaravelDynamoDb\Exceptions;
 
 /**
  * Exception thrown when data validation fails.
- * 
+ *
  * This occurs when attempting to insert/update data that doesn't match
  * the expected schema or contains invalid values.
  */
@@ -12,10 +12,6 @@ class ValidationException extends DynamoDbException
 {
     /**
      * Create a new ValidationException instance.
-     *
-     * @param string $message
-     * @param \Throwable|null $previous
-     * @param array $context
      */
     public function __construct(
         string $message = 'Data validation failed',

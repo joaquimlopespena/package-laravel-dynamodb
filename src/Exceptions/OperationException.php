@@ -4,17 +4,13 @@ namespace Joaquim\LaravelDynamoDb\Exceptions;
 
 /**
  * Exception thrown when a CRUD operation fails.
- * 
+ *
  * This includes failures in insert, update, delete operations.
  */
 class OperationException extends DynamoDbException
 {
     /**
      * Create a new OperationException instance.
-     *
-     * @param string $message
-     * @param \Throwable|null $previous
-     * @param array $context
      */
     public function __construct(
         string $message = 'DynamoDB operation failed',

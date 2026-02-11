@@ -4,17 +4,13 @@ namespace Joaquim\LaravelDynamoDb\Exceptions;
 
 /**
  * Exception thrown when a requested table is not found.
- * 
+ *
  * This occurs when trying to perform operations on a table that doesn't exist.
  */
 class TableNotFoundException extends DynamoDbException
 {
     /**
      * Create a new TableNotFoundException instance.
-     *
-     * @param string $tableName
-     * @param \Throwable|null $previous
-     * @param array $context
      */
     public function __construct(
         string $tableName = '',
