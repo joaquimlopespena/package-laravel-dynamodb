@@ -6,6 +6,8 @@ use Illuminate\Database\Query\Builder as BaseBuilder;
 use Illuminate\Database\Query\Grammars\Grammar as BaseGrammar;
 use Joaquim\LaravelDynamoDb\Database\DynamoDb\Eloquent\Model as DynamoDbModel;
 use Joaquim\LaravelDynamoDb\Database\DynamoDb\Index\IndexResolver;
+use Joaquim\LaravelDynamoDb\Exceptions\ValidationException;
+use Joaquim\LaravelDynamoDb\Exceptions\QueryException;
 
 class Grammar extends BaseGrammar
 {
@@ -580,8 +582,28 @@ class Grammar extends BaseGrammar
     {
         $table = $this->getTableName($query);
 
+        // Validate that values are not empty
+        if (empty($values)) {
+            throw new ValidationException(
+                message: 'Cannot insert empty values',
+                context: ['table' => $table],
+                suggestion: 'Provide at least one attribute to insert'
+            );
+        }
+
         // Se for array de arrays (batch insert), retorna todos
         if (isset($values[0]) && is_array($values[0])) {
+            // Validate each item in batch
+            foreach ($values as $index => $item) {
+                if (empty($item)) {
+                    throw new ValidationException(
+                        message: "Cannot insert empty item at index {$index}",
+                        context: ['table' => $table, 'index' => $index],
+                        suggestion: 'Ensure all items in batch insert contain data'
+                    );
+                }
+            }
+            
             return array_map(fn($value) => [
                 'params' => [
                     'TableName' => $table,
@@ -608,8 +630,29 @@ class Grammar extends BaseGrammar
      */
     public function compileUpdate(BaseBuilder $query, array $values)
     {
+        // Validate that values are not empty
+        if (empty($values)) {
+            throw new ValidationException(
+                message: 'Cannot update with empty values',
+                context: ['table' => $this->getTableName($query)],
+                suggestion: 'Provide at least one attribute to update'
+            );
+        }
+
         // Por enquanto, simples - será melhorado
         $key = $this->extractKeyFromWheres($query);
+
+        // Validate that key was extracted
+        if (empty($key)) {
+            throw new ValidationException(
+                message: 'Cannot update without a primary key condition',
+                context: [
+                    'table' => $this->getTableName($query),
+                    'wheres' => $query->wheres,
+                ],
+                suggestion: 'Update operations in DynamoDB require the primary key in the WHERE clause'
+            );
+        }
 
         $updateExpression = [];
         $expressionAttributeValues = [];
@@ -645,6 +688,18 @@ class Grammar extends BaseGrammar
     public function compileDelete(BaseBuilder $query)
     {
         $key = $this->extractKeyFromWheres($query);
+
+        // Validate that key was extracted
+        if (empty($key)) {
+            throw new ValidationException(
+                message: 'Cannot delete without a primary key condition',
+                context: [
+                    'table' => $this->getTableName($query),
+                    'wheres' => $query->wheres,
+                ],
+                suggestion: 'Delete operations in DynamoDB require the primary key in the WHERE clause'
+            );
+        }
 
         return [
             'params' => [

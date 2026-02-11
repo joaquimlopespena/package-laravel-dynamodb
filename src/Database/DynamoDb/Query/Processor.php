@@ -4,6 +4,7 @@ namespace Joaquim\LaravelDynamoDb\Database\DynamoDb\Query;
 
 use Illuminate\Database\Query\Processors\Processor as BaseProcessor;
 use Illuminate\Database\Query\Builder;
+use Joaquim\LaravelDynamoDb\Exceptions\OperationException;
 
 class Processor extends BaseProcessor
 {
@@ -16,6 +17,18 @@ class Processor extends BaseProcessor
      */
     public function processSelect($query, $results)
     {
+        // Validate results
+        if (!is_array($results)) {
+            throw new OperationException(
+                message: 'Invalid query results format',
+                context: [
+                    'results_type' => gettype($results),
+                    'has_aggregate' => !is_null($query->aggregate ?? null),
+                ],
+                suggestion: 'Query results should be an array. This may indicate a problem with the query execution.'
+            );
+        }
+
         // Se for uma query de agregação (count, sum, etc)
         if (! is_null($query->aggregate)) {
             return $this->processAggregate($query, $results);
