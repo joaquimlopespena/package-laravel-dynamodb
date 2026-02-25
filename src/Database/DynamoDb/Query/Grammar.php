@@ -540,6 +540,18 @@ class Grammar extends BaseGrammar
                     $attributeNames[$nameKey] = $column;
                     $attributeValues[$valueKey] = $value;
                     break;
+
+                case 'Null':
+                    $column = $where['column'];
+                    $attributeNames[$nameKey] = $column;
+                    $expression[] = "attribute_not_exists({$nameKey})";
+                    break;
+
+                case 'NotNull':
+                    $column = $where['column'];
+                    $attributeNames[$nameKey] = $column;
+                    $expression[] = "attribute_exists({$nameKey})";
+                    break;
             }
         }
 
@@ -722,4 +734,3 @@ class Grammar extends BaseGrammar
         // Por enquanto, apenas ignoramos (não adicionamos ScanIndexForward)
     }
 }
-
