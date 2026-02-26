@@ -260,6 +260,12 @@ class IndexResolver
         $hasSortKey = false;
 
         foreach ($wheres as $where) {
+            // Condições Null/NotNull vão para FilterExpression (não são KeyCondition)
+            if ($where['type'] === 'Null' || $where['type'] === 'NotNull') {
+                $filterConditions[] = $where;
+                continue;
+            }
+
             if ($where['type'] !== 'Basic') {
                 continue;
             }
@@ -377,4 +383,3 @@ class IndexResolver
         return $this->sortKey;
     }
 }
-
