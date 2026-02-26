@@ -140,13 +140,21 @@ class Grammar extends BaseGrammar
         if ($resolver) {
             $indexMatch = $resolver->findBestIndex($query);
             if ($indexMatch) {
-                // Se encontrou índice, pode usar Query
+                // Primary key simples sem sort key: usar GetItem só se não houver outras condições.
+                // Se houver (ex.: whereNull), usar Query para aplicar FilterExpression.
                 if ($indexMatch['index_type'] === 'primary' &&
                     count($indexMatch['key_conditions']) === 1 &&
                     !$resolver->getSortKey()) {
-                    return 'GetItem'; // Primary key simples sem sort key
+                    $keyColumns = array_column($indexMatch['key_conditions'], 'column');
+                    $remainingWheres = array_filter($wheres, function ($where) use ($keyColumns) {
+                        $col = $where['column'] ?? null;
+                        return $col === null || !in_array($col, $keyColumns);
+                    });
+                    if (empty($remainingWheres)) {
+                        return 'GetItem';
+                    }
                 }
-                return 'Query'; // Usar Query com índice
+                return 'Query'; // Usar Query com índice (e FilterExpression quando houver outras condições)
             }
         }
 
