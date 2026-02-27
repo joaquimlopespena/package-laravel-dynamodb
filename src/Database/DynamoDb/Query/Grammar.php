@@ -549,6 +549,25 @@ class Grammar extends BaseGrammar
                     $attributeValues[$valueKey] = $value;
                     break;
 
+                case 'In':
+                    $column = $where['column'];
+                    $values = $where['values'] ?? [];
+                    if (empty($values)) {
+                        $counter--;
+                        break;
+                    }
+                    // DynamoDB FilterExpression não tem IN; usar (attr = :v1 OR attr = :v2 OR ...)
+                    $orParts = [];
+                    foreach ($values as $v) {
+                        $counter++;
+                        $valKey = ":val{$counter}";
+                        $orParts[] = "{$nameKey} = {$valKey}";
+                        $attributeValues[$valKey] = $v;
+                    }
+                    $attributeNames[$nameKey] = $column;
+                    $expression[] = '(' . implode(' OR ', $orParts) . ')';
+                    break;
+
                 case 'Null':
                     $column = $where['column'];
                     $attributeNames[$nameKey] = $column;
