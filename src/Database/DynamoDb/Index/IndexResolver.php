@@ -266,6 +266,12 @@ class IndexResolver
                 continue;
             }
 
+            // whereIn (In) vai para FilterExpression
+            if ($where['type'] === 'In') {
+                $filterConditions[] = $where;
+                continue;
+            }
+
             if ($where['type'] !== 'Basic') {
                 continue;
             }
