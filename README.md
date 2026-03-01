@@ -393,6 +393,41 @@ class ClienteController extends Controller
 }
 ```
 
+## 🧪 Testes
+
+Este pacote inclui uma suite completa de testes automatizados usando PHPUnit e Orchestra Testbench.
+
+### Executar Testes
+
+```bash
+# Rodar todos os testes
+composer test
+
+# Rodar testes com cobertura
+composer test-coverage
+```
+
+### Cobertura de Testes
+
+O projeto mantém **70-80%** de cobertura de código, testando:
+
+- ✅ **Connector & Connection** - Criação de conexões, configuração, credenciais
+- ✅ **Query Builder** - Construção de queries, where clauses, ordenação
+- ✅ **Pagination** - Paginação cursor-based, LastEvaluatedKey
+- ✅ **Parallel Scan** - Scans com segmentos, contagem paralela
+- ✅ **Eloquent Model** - Instanciação, atributos, conversões
+- ✅ **CRUD Operations** - Create, Read, Update, Delete
+- ✅ **Error Handling** - Exceções, validações, timeouts
+
+Veja [tests/README.md](tests/README.md) para mais detalhes sobre testes.
+
+### CI/CD
+
+Os testes rodam automaticamente no GitHub Actions para:
+- PHP 8.2 e 8.3
+- Laravel 11.x e 12.x
+- Todas as pull requests e commits
+
 ## 🤝 Contribuindo
 
 Contribuições são bem-vindas! Por favor:

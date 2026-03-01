@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         failOnWarning="true"
+         failOnRisky="true"
+         beStrictAboutOutputDuringTests="true"
+         cacheDirectory=".phpunit.cache"
+         executionOrder="random"
+         requireCoverageMetadata="false"
+         beStrictAboutCoverageMetadata="true"
+         backupGlobals="false">
+    <testsuites>
+        <testsuite name="DynamoDB Package Test Suite">
+            <directory suffix="Test.php">./tests</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory suffix=".php">./src</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_KEY" value="base64:2fl+Ktvkujp3cDJ8SN06FdkbmQJL8hBMgRBJ2kGOx/k="/>
+        <env name="DB_CONNECTION" value="dynamodb"/>
+        <env name="DYNAMODB_CONNECTION" value="local"/>
+        <env name="DYNAMODB_ENDPOINT" value="http://localhost:8000"/>
+        <env name="DYNAMODB_REGION" value="us-east-1"/>
+        <env name="DYNAMODB_ACCESS_KEY_ID" value="AKIAIOSFODNN7EXAMPLE"/>
+        <env name="DYNAMODB_SECRET_ACCESS_KEY" value="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"/>
+    </php>
+</phpunit>

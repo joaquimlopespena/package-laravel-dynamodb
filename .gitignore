@@ -4,4 +4,7 @@
 composer.lock
 .DS_Store
 Thumbs.db
+.phpunit.cache/
+coverage/
+*.log
 

@@ -732,6 +732,6 @@ class DynamoDbConnection extends BaseConnection
      */
     public function getTableName()
     {
-        return $this->getConfig('table');
+        return $this->getConfig('table') ?? $this->getDatabaseName();
     }
 }
