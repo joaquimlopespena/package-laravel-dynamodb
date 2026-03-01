@@ -6,10 +6,23 @@ use Illuminate\Database\Query\Builder as BaseBuilder;
 use Joaquim\LaravelDynamoDb\Database\DynamoDb\Eloquent\Model as DynamoDbModel;
 use Illuminate\Pagination\Paginator;
 
+/**
+ * DynamoDB Query Builder Class.
+ * 
+ * Extensão do Query Builder do Laravel com funcionalidades específicas
+ * para DynamoDB, incluindo paginação por cursor (LastEvaluatedKey) e
+ * suporte a resolução automática de índices.
+ * 
+ * @package Joaquim\LaravelDynamoDb\Database\DynamoDb\Query
+ * @since 1.0.0
+ */
 class Builder extends BaseBuilder
 {
     /**
      * Model instance associated with this query (for index resolution).
+     * 
+     * Instância do model Eloquent associado à query, usado pelo
+     * Grammar para resolver índices automaticamente.
      *
      * @var DynamoDbModel|null
      */
@@ -17,9 +30,15 @@ class Builder extends BaseBuilder
 
     /**
      * Set the model instance.
+     * 
+     * Associa um model Eloquent à query para permitir resolução
+     * automática de índices (GSI/LSI).
      *
-     * @param DynamoDbModel $model
-     * @return self
+     * @param DynamoDbModel $model Model DynamoDB
+     * 
+     * @return self Retorna a própria instância para method chaining
+     * 
+     * @since 1.0.0
      */
     public function setModel(DynamoDbModel $model): self
     {
@@ -29,8 +48,12 @@ class Builder extends BaseBuilder
 
     /**
      * Get the model instance.
+     * 
+     * Retorna o model Eloquent associado à query.
      *
-     * @return DynamoDbModel|null
+     * @return DynamoDbModel|null Model associado ou null
+     * 
+     * @since 1.0.0
      */
     public function getModel(): ?DynamoDbModel
     {
@@ -39,13 +62,31 @@ class Builder extends BaseBuilder
 
     /**
      * Paginate the given query using cursor-based pagination.
-     * DynamoDB não suporta OFFSET, então usamos LastEvaluatedKey (cursor).
+     * 
+     * Implementa paginação por cursor usando LastEvaluatedKey do DynamoDB.
+     * DynamoDB não suporta OFFSET tradicional, apenas paginação sequencial
+     * através de cursores. O cursor é codificado em base64 e contém o
+     * LastEvaluatedKey necessário para buscar a próxima página.
      *
-     * @param int $perPage
-     * @param array $columns
-     * @param string $cursorName
-     * @param string|null $cursor
-     * @return \Illuminate\Contracts\Pagination\Paginator
+     * @param int $perPage Número de itens por página (padrão: 15)
+     * @param array $columns Colunas a selecionar (não usado, mantido por compatibilidade)
+     * @param string $cursorName Nome do parâmetro do cursor na query string (padrão: 'cursor')
+     * @param string|null $cursor Cursor codificado da página atual (se null, busca da query string)
+     * 
+     * @return \Illuminate\Contracts\Pagination\Paginator Paginator com cursor para próxima página
+     * 
+     * @example
+     * // Primeira página
+     * $users = User::where('status', 'active')->simplePaginate(10);
+     * 
+     * // Próxima página (cursor automático via query string)
+     * // URL: /users?cursor=eyJpZCI6InVzZXIxMjMiLCJjcmVhdGVkX2F0IjoxNjM...
+     * $users = User::where('status', 'active')->simplePaginate(10);
+     * 
+     * // Com cursor explícito
+     * $users = User::where('status', 'active')->simplePaginate(10, ['*'], 'cursor', $nextCursor);
+     * 
+     * @since 1.0.0
      */
     public function simplePaginate($perPage = 15, $columns = ['*'], $cursorName = 'cursor', $cursor = null)
     {

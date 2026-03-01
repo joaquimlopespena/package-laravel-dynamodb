@@ -6,12 +6,25 @@ use Illuminate\Database\Query\Builder;
 use Joaquim\LaravelDynamoDb\Database\DynamoDb\Eloquent\Model;
 
 /**
- * Resolve qual índice usar para uma query baseado nas condições where.
+ * DynamoDB Index Resolver Class.
+ * 
+ * Analisa condições WHERE de uma query e determina automaticamente
+ * o melhor índice (Primary Key, GSI ou LSI) para executar a query.
+ * 
+ * O IndexResolver maximiza performance escolhendo índices que:
+ * - Minimizam uso de RCU (Read Capacity Units)
+ * - Evitam Scan sempre que possível
+ * - Priorizam Query com índices sobre FilterExpression
+ * 
+ * @package Joaquim\LaravelDynamoDb\Database\DynamoDb\Index
+ * @since 1.0.0
  */
 class IndexResolver
 {
     /**
      * Model instance para obter configuração de índices.
+     * 
+     * O model define partition key, sort key, GSI e LSI disponíveis.
      *
      * @var Model|null
      */
@@ -19,6 +32,8 @@ class IndexResolver
 
     /**
      * Partition Key da tabela.
+     * 
+     * Chave de particionamento que determina a distribuição física dos dados.
      *
      * @var string|null
      */
@@ -26,6 +41,8 @@ class IndexResolver
 
     /**
      * Sort Key da tabela.
+     * 
+     * Chave de ordenação opcional que permite range queries.
      *
      * @var string|null
      */
@@ -33,6 +50,8 @@ class IndexResolver
 
     /**
      * GSI indexes configurados.
+     * 
+     * Global Secondary Indexes com suas próprias partition e sort keys.
      *
      * @var array
      */
@@ -40,6 +59,8 @@ class IndexResolver
 
     /**
      * LSI indexes configurados.
+     * 
+     * Local Secondary Indexes que compartilham partition key mas têm sort key alternativo.
      *
      * @var array
      */
@@ -47,8 +68,13 @@ class IndexResolver
 
     /**
      * Create a new IndexResolver instance.
+     * 
+     * Inicializa o resolver opcionalmente com um model para
+     * carregar configurações de índices imediatamente.
      *
-     * @param Model|null $model
+     * @param Model|null $model Model DynamoDB com configurações de índices
+     * 
+     * @since 1.0.0
      */
     public function __construct(?Model $model = null)
     {
@@ -59,9 +85,15 @@ class IndexResolver
 
     /**
      * Set the model and load its index configuration.
+     * 
+     * Carrega configurações de índices (partition key, sort key, GSI, LSI)
+     * do model para uso na resolução de índices.
      *
-     * @param Model $model
-     * @return self
+     * @param Model $model Model DynamoDB
+     * 
+     * @return self Retorna a própria instância para method chaining
+     * 
+     * @since 1.0.0
      */
     public function setModel(Model $model): self
     {
@@ -76,9 +108,32 @@ class IndexResolver
 
     /**
      * Find the best index match for a query.
+     * 
+     * Analisa condições WHERE e retorna o melhor índice a usar.
+     * Prioriza nesta ordem:
+     * 1. Primary Key (GetItem/Query) - mais eficiente
+     * 2. LSI (Local Secondary Index) - compartilha partition key
+     * 3. GSI (Global Secondary Index) - permite queries alternativas
+     * 4. null - indica que Scan é necessário (menos eficiente)
      *
-     * @param Builder $query
-     * @return array|null ['index_name' => string, 'index_type' => 'gsi'|'lsi'|'primary', 'key_conditions' => array, 'filter_conditions' => array]
+     * @param Builder $query Query builder com condições WHERE
+     * 
+     * @return array|null Array com index_name, index_type, key_conditions, filter_conditions, has_partition_key, has_sort_key, sort_key ou null se nenhum índice aplicável
+     * 
+     * @example
+     * // Query pode usar Primary Key
+     * $match = $resolver->findBestIndex($query->where('id', 'user123'));
+     * // ['index_type' => 'primary', 'key_conditions' => [...], ...]
+     * 
+     * // Query pode usar GSI
+     * $match = $resolver->findBestIndex($query->where('email', 'john@example.com'));
+     * // ['index_name' => 'email-index', 'index_type' => 'gsi', ...]
+     * 
+     * // Query precisa usar Scan
+     * $match = $resolver->findBestIndex($query->where('random_field', 'value'));
+     * // null (nenhum índice aplicável)
+     * 
+     * @since 1.0.0
      */
     public function findBestIndex(Builder $query): ?array
     {
@@ -118,9 +173,15 @@ class IndexResolver
 
     /**
      * Check if query can use Primary Key (GetItem or Query).
+     * 
+     * Verifica se as condições WHERE incluem a partition key com igualdade,
+     * permitindo uso da Primary Key (operação mais eficiente).
      *
-     * @param array $wheres
-     * @return bool
+     * @param array $wheres Array de condições WHERE da query
+     * 
+     * @return bool True se pode usar Primary Key
+     * 
+     * @since 1.0.0
      */
     protected function canUsePrimaryKey(array $wheres): bool
     {
@@ -150,9 +211,15 @@ class IndexResolver
 
     /**
      * Find matching LSI index.
+     * 
+     * Busca um Local Secondary Index que possa ser usado.
+     * LSI requer que a partition key esteja nas condições WHERE com igualdade.
      *
-     * @param array $wheres
-     * @return array|null
+     * @param array $wheres Array de condições WHERE da query
+     * 
+     * @return array|null Informações do LSI encontrado ou null
+     * 
+     * @since 1.0.0
      */
     protected function findLsiMatch(array $wheres): ?array
     {
@@ -188,10 +255,16 @@ class IndexResolver
 
     /**
      * Find matching GSI index.
-     * Prioriza índices que tenham Partition Key presente nas condições WHERE.
+     * 
+     * Busca o melhor Global Secondary Index que possa ser usado.
+     * Prioriza índices que tenham tanto partition key quanto sort key
+     * nas condições WHERE.
      *
-     * @param array $wheres
-     * @return array|null
+     * @param array $wheres Array de condições WHERE da query
+     * 
+     * @return array|null Informações do GSI encontrado ou null
+     * 
+     * @since 1.0.0
      */
     protected function findGsiMatch(array $wheres): ?array
     {
@@ -238,12 +311,19 @@ class IndexResolver
 
     /**
      * Check if where conditions match an index.
+     * 
+     * Verifica se condições WHERE são compatíveis com um índice específico.
+     * Separa condições em key_conditions (usadas em KeyConditionExpression)
+     * e filter_conditions (usadas em FilterExpression).
      *
-     * @param array $wheres
-     * @param array $indexConfig
-     * @param string $indexName
-     * @param string $indexType
-     * @return array|null
+     * @param array $wheres Array de condições WHERE
+     * @param array $indexConfig Configuração do índice (partition_key, sort_key)
+     * @param string $indexName Nome do índice
+     * @param string $indexType Tipo do índice ('gsi' ou 'lsi')
+     * 
+     * @return array|null Informações do match ou null se não compatível
+     * 
+     * @since 1.0.0
      */
     protected function checkIndexMatch(array $wheres, array $indexConfig, string $indexName, string $indexType): ?array
     {
@@ -325,10 +405,15 @@ class IndexResolver
 
     /**
      * Extract key conditions from where clauses.
+     * 
+     * Extrai condições WHERE que correspondem às key columns fornecidas.
      *
-     * @param array $wheres
-     * @param array $keyColumns
-     * @return array
+     * @param array $wheres Array de condições WHERE
+     * @param array $keyColumns Array de nomes de colunas (partition key e sort key)
+     * 
+     * @return array Array de key conditions
+     * 
+     * @since 1.0.0
      */
     protected function extractKeyConditions(array $wheres, array $keyColumns): array
     {
@@ -349,9 +434,14 @@ class IndexResolver
 
     /**
      * Check if a column is the partition key.
+     * 
+     * Verifica se a coluna especificada é a partition key da tabela.
      *
-     * @param string $column
-     * @return bool
+     * @param string $column Nome da coluna
+     * 
+     * @return bool True se for a partition key
+     * 
+     * @since 1.0.0
      */
     public function isPartitionKey(string $column): bool
     {
@@ -360,9 +450,14 @@ class IndexResolver
 
     /**
      * Check if a column is the sort key.
+     * 
+     * Verifica se a coluna especificada é a sort key da tabela.
      *
-     * @param string $column
-     * @return bool
+     * @param string $column Nome da coluna
+     * 
+     * @return bool True se for a sort key
+     * 
+     * @since 1.0.0
      */
     public function isSortKey(string $column): bool
     {
@@ -371,8 +466,12 @@ class IndexResolver
 
     /**
      * Get partition key.
+     * 
+     * Retorna o nome da partition key da tabela.
      *
-     * @return string|null
+     * @return string|null Nome da partition key
+     * 
+     * @since 1.0.0
      */
     public function getPartitionKey(): ?string
     {
@@ -381,8 +480,12 @@ class IndexResolver
 
     /**
      * Get sort key.
+     * 
+     * Retorna o nome da sort key da tabela.
      *
-     * @return string|null
+     * @return string|null Nome da sort key
+     * 
+     * @since 1.0.0
      */
     public function getSortKey(): ?string
     {
