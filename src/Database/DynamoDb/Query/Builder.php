@@ -82,47 +82,89 @@ class Builder extends BaseBuilder
             $params['ExclusiveStartKey'] = $this->connection->getMarshaler()->marshalItem($lastEvaluatedKey);
         }
 
-        // Buscar um item a mais para saber se há próxima página
-        $params['Limit'] = $perPage + 1;
+        $hasFilterExpression = ! empty($params['FilterExpression']);
+
+        // Com FilterExpression, o Limit do DynamoDB aplica aos itens LIDOS antes do filtro.
+        // Uma única chamada com Limit = perPage+1 pode devolver 0 itens. Por isso fazemos loop
+        // até reunir perPage+1 itens que passem no filtro (ou acabar a busca).
+        if (! $hasFilterExpression) {
+            $params['Limit'] = $perPage + 1;
+        }
 
         // Executar a operação no DynamoDB
         try {
             $client = $this->connection->getDynamoDbClient();
             $marshaler = $this->connection->getMarshaler();
 
-            if ($operation === 'Query') {
-                // Marshal ExpressionAttributeValues
-                if (isset($params['ExpressionAttributeValues']) && !empty($params['ExpressionAttributeValues'])) {
-                    $params['ExpressionAttributeValues'] = $marshaler->marshalItem($params['ExpressionAttributeValues']);
-                }
-                $result = $client->query($params);
-            } else {
-                // Scan
-                if (isset($params['ExpressionAttributeValues']) && !empty($params['ExpressionAttributeValues'])) {
-                    $params['ExpressionAttributeValues'] = $marshaler->marshalItem($params['ExpressionAttributeValues']);
-                }
-                $result = $client->scan($params);
+            if (isset($params['ExpressionAttributeValues']) && ! empty($params['ExpressionAttributeValues'])) {
+                $params['ExpressionAttributeValues'] = $marshaler->marshalItem($params['ExpressionAttributeValues']);
             }
 
-            // Unmarshal items
-            $items = array_map(
-                fn($item) => (object) $marshaler->unmarshalItem($item),
-                $result['Items'] ?? []
-            );
-
-            // Verificar se há mais páginas
-            $hasMorePages = count($items) > $perPage;
-            
-            // Remover o item extra se houver
-            if ($hasMorePages) {
-                array_pop($items);
-            }
-
-            // Gerar next cursor se houver mais páginas
+            $items = [];
             $nextCursor = null;
-            if ($hasMorePages && isset($result['LastEvaluatedKey'])) {
-                $unmarshaledKey = $marshaler->unmarshalItem($result['LastEvaluatedKey']);
-                $nextCursor = base64_encode(json_encode($unmarshaledKey));
+            $hasMorePages = false;
+
+            if ($hasFilterExpression) {
+                // Tamanho de cada página lida do DynamoDB (evita ler a tabela inteira de uma vez)
+                $readPageSize = min(100, max($perPage + 1, 50));
+                $params['Limit'] = $readPageSize;
+                $collected = [];
+                $currentParams = $params;
+                $lastEvaluatedKey = null;
+
+                do {
+                    if ($operation === 'Query') {
+                        $result = $client->query($currentParams);
+                    } else {
+                        $result = $client->scan($currentParams);
+                    }
+
+                    $lastEvaluatedKey = $result['LastEvaluatedKey'] ?? null;
+                    $rawItems = $result['Items'] ?? [];
+                    foreach ($rawItems as $item) {
+                        $collected[] = (object) $marshaler->unmarshalItem($item);
+                        if (count($collected) >= $perPage + 1) {
+                            break 2;
+                        }
+                    }
+
+                    if (empty($lastEvaluatedKey)) {
+                        break;
+                    }
+
+                    $currentParams = array_merge($params, [
+                        'ExclusiveStartKey' => $lastEvaluatedKey,
+                    ]);
+                } while (true);
+
+                $items = array_slice($collected, 0, $perPage + 1);
+                $hasMorePages = count($collected) > $perPage || ! empty($lastEvaluatedKey);
+                if (count($items) > $perPage) {
+                    array_pop($items);
+                }
+                if ($hasMorePages && ! empty($lastEvaluatedKey)) {
+                    $nextCursor = base64_encode(json_encode($marshaler->unmarshalItem($lastEvaluatedKey)));
+                }
+            } else {
+                if ($operation === 'Query') {
+                    $result = $client->query($params);
+                } else {
+                    $result = $client->scan($params);
+                }
+
+                $items = array_map(
+                    fn ($item) => (object) $marshaler->unmarshalItem($item),
+                    $result['Items'] ?? []
+                );
+
+                $hasMorePages = count($items) > $perPage;
+                if ($hasMorePages) {
+                    array_pop($items);
+                }
+
+                if ($hasMorePages && ! empty($result['LastEvaluatedKey'])) {
+                    $nextCursor = base64_encode(json_encode($marshaler->unmarshalItem($result['LastEvaluatedKey'])));
+                }
             }
 
             // Criar paginator
