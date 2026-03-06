@@ -144,6 +144,12 @@ class Builder extends BaseBuilder
                 }
                 if ($hasMorePages && ! empty($lastEvaluatedKey)) {
                     $nextCursor = base64_encode(json_encode($marshaler->unmarshalItem($lastEvaluatedKey)));
+                } elseif ($hasMorePages && count($collected) > $perPage) {
+                    // Primeira página com FilterExpression: às vezes o DynamoDB não devolve LastEvaluatedKey
+                    // quando a resposta tem exatamente perPage+1 itens. Monta o cursor a partir do item
+                    // que ficou fora da página (o primeiro da próxima).
+                    $lastItem = $collected[$perPage];
+                    $nextCursor = base64_encode(json_encode((array) $lastItem));
                 }
             } else {
                 if ($operation === 'Query') {
@@ -158,12 +164,15 @@ class Builder extends BaseBuilder
                 );
 
                 $hasMorePages = count($items) > $perPage;
-                if ($hasMorePages) {
-                    array_pop($items);
-                }
-
                 if ($hasMorePages && ! empty($result['LastEvaluatedKey'])) {
                     $nextCursor = base64_encode(json_encode($marshaler->unmarshalItem($result['LastEvaluatedKey'])));
+                } elseif ($hasMorePages && isset($items[$perPage])) {
+                    // Primeira página: às vezes o DynamoDB não devolve LastEvaluatedKey.
+                    // Monta o cursor a partir do item que ficou fora da página.
+                    $nextCursor = base64_encode(json_encode((array) $items[$perPage]));
+                }
+                if ($hasMorePages) {
+                    array_pop($items);
                 }
             }
 
