@@ -77,9 +77,12 @@ class Builder extends BaseBuilder
         $operation = $compiled['operation'];
         $params = $compiled['params'];
 
-        // Adicionar ExclusiveStartKey se houver cursor
+        // Adicionar ExclusiveStartKey se houver cursor (apenas atributos da chave do índice/tabela)
         if ($lastEvaluatedKey) {
-            $params['ExclusiveStartKey'] = $this->connection->getMarshaler()->marshalItem($lastEvaluatedKey);
+            $lastEvaluatedKey = $this->filterToKeyAttributesForCursor($lastEvaluatedKey, $params);
+            if (! empty($lastEvaluatedKey)) {
+                $params['ExclusiveStartKey'] = $this->connection->getMarshaler()->marshalItem($lastEvaluatedKey);
+            }
         }
 
         $hasFilterExpression = ! empty($params['FilterExpression']);
@@ -145,11 +148,12 @@ class Builder extends BaseBuilder
                 if ($hasMorePages && ! empty($lastEvaluatedKey)) {
                     $nextCursor = base64_encode(json_encode($marshaler->unmarshalItem($lastEvaluatedKey)));
                 } elseif ($hasMorePages && count($collected) > $perPage) {
-                    // Primeira página com FilterExpression: às vezes o DynamoDB não devolve LastEvaluatedKey
-                    // quando a resposta tem exatamente perPage+1 itens. Monta o cursor a partir do item
-                    // que ficou fora da página (o primeiro da próxima).
-                    $lastItem = $collected[$perPage];
-                    $nextCursor = base64_encode(json_encode((array) $lastItem));
+                    // Primeira página com FilterExpression: às vezes o DynamoDB não devolve LastEvaluatedKey.
+                    // ExclusiveStartKey = "começar depois deste item" → usar o último item que mostramos.
+                    $lastShownIndex = $perPage - 1;
+                    $lastItem = $collected[$lastShownIndex];
+                    $keyOnly = $this->filterToKeyAttributesForCursor((array) $lastItem, $params);
+                    $nextCursor = ! empty($keyOnly) ? base64_encode(json_encode($keyOnly)) : null;
                 }
             } else {
                 if ($operation === 'Query') {
@@ -166,10 +170,11 @@ class Builder extends BaseBuilder
                 $hasMorePages = count($items) > $perPage;
                 if ($hasMorePages && ! empty($result['LastEvaluatedKey'])) {
                     $nextCursor = base64_encode(json_encode($marshaler->unmarshalItem($result['LastEvaluatedKey'])));
-                } elseif ($hasMorePages && isset($items[$perPage])) {
+                } elseif ($hasMorePages && isset($items[$perPage - 1])) {
                     // Primeira página: às vezes o DynamoDB não devolve LastEvaluatedKey.
-                    // Monta o cursor a partir do item que ficou fora da página.
-                    $nextCursor = base64_encode(json_encode((array) $items[$perPage]));
+                    // ExclusiveStartKey = "começar depois deste item" → usar o último item que mostramos.
+                    $keyOnly = $this->filterToKeyAttributesForCursor((array) $items[$perPage - 1], $params);
+                    $nextCursor = ! empty($keyOnly) ? base64_encode(json_encode($keyOnly)) : null;
                 }
                 if ($hasMorePages) {
                     array_pop($items);
@@ -211,6 +216,66 @@ class Builder extends BaseBuilder
                 'cursorName' => $cursorName,
             ]);
         }
+    }
+
+    /**
+     * Retorna os nomes dos atributos que compõem a chave para ExclusiveStartKey
+     * (índice ou tabela), para que o cursor não envie atributos extras ou null.
+     *
+     * @param array $params Params compilados (TableName, IndexName, etc.)
+     * @return array<string>|null
+     */
+    protected function getKeyAttributeNamesForCursor(array $params): ?array
+    {
+        $model = $this->getModel();
+        if (! $model) {
+            return null;
+        }
+
+        $indexName = $params['IndexName'] ?? null;
+        $tablePartitionKey = $model->getPartitionKey();
+        $tableSortKey = $model->getSortKey();
+
+        if ($indexName && $tablePartitionKey) {
+            $gsiIndexes = $model->getGsiIndexes();
+            $indexConfig = $gsiIndexes[$indexName] ?? null;
+            if ($indexConfig && isset($indexConfig['partition_key'])) {
+                $keys = [$indexConfig['partition_key']];
+                if (! empty($indexConfig['sort_key'])) {
+                    $keys[] = $indexConfig['sort_key'];
+                }
+                $keys[] = $tablePartitionKey;
+                return array_values(array_unique($keys));
+            }
+        }
+
+        $keys = array_filter([$tablePartitionKey, $tableSortKey]);
+        return empty($keys) ? null : array_values($keys);
+    }
+
+    /**
+     * Filtra um item/array para conter apenas os atributos da chave do índice/tabela
+     * e remove valores null (DynamoDB não aceita null em chave).
+     *
+     * @param array $item Item completo ou decoded cursor
+     * @param array $params Params compilados da query
+     * @return array
+     */
+    protected function filterToKeyAttributesForCursor(array $item, array $params): array
+    {
+        $keyNames = $this->getKeyAttributeNamesForCursor($params);
+        if (empty($keyNames)) {
+            return $item;
+        }
+
+        $filtered = [];
+        foreach ($keyNames as $key) {
+            if (array_key_exists($key, $item) && $item[$key] !== null && $item[$key] !== '') {
+                $filtered[$key] = $item[$key];
+            }
+        }
+
+        return $filtered;
     }
 }
 
