@@ -166,6 +166,9 @@ class Model extends BaseModel
             $attributes[$partitionKey] = $id;
         }
 
+        // DynamoDB não aceita string vazia em chaves de índice (GSI/LSI); remover antes do PutItem
+        $attributes = $this->stripEmptyStringsFromIndexKeyAttributes($attributes);
+
         // Executar insert via connection
         $query->getConnection()->insert(
             $query->getQuery()->getGrammar()->compileInsert($query->getQuery(), $attributes)
@@ -175,6 +178,48 @@ class Model extends BaseModel
         $this->syncOriginal();
 
         return true;
+    }
+
+    /**
+     * Remove atributos de chave de índice (partition, sort, GSI, LSI) com string vazia ou null.
+     * DynamoDB não aceita string vazia em chaves de índice.
+     *
+     * @param array $attributes
+     * @return array
+     */
+    protected function stripEmptyStringsFromIndexKeyAttributes(array $attributes): array
+    {
+        $keyNames = [];
+        $partitionKey = $this->getPartitionKey();
+        if ($partitionKey) {
+            $keyNames[] = $partitionKey;
+        }
+        $sortKey = $this->getSortKey();
+        if ($sortKey) {
+            $keyNames[] = $sortKey;
+        }
+        foreach ($this->getGsiIndexes() as $indexConfig) {
+            if (!empty($indexConfig['partition_key'])) {
+                $keyNames[] = $indexConfig['partition_key'];
+            }
+            if (!empty($indexConfig['sort_key'])) {
+                $keyNames[] = $indexConfig['sort_key'];
+            }
+        }
+        foreach ($this->getLsiIndexes() as $indexConfig) {
+            if (!empty($indexConfig['sort_key'])) {
+                $keyNames[] = $indexConfig['sort_key'];
+            }
+        }
+        $keyNames = array_unique(array_filter($keyNames));
+
+        foreach ($keyNames as $key) {
+            if (array_key_exists($key, $attributes) && ($attributes[$key] === '' || $attributes[$key] === null)) {
+                unset($attributes[$key]);
+            }
+        }
+
+        return $attributes;
     }
 
     /**
