@@ -145,14 +145,12 @@ class Builder extends BaseBuilder
                 if (count($items) > $perPage) {
                     array_pop($items);
                 }
-                if ($hasMorePages && ! empty($lastEvaluatedKey)) {
-                    $nextCursor = base64_encode(json_encode($marshaler->unmarshalItem($lastEvaluatedKey)));
-                } elseif ($hasMorePages && count($collected) > $perPage) {
-                    // Primeira página com FilterExpression: às vezes o DynamoDB não devolve LastEvaluatedKey.
-                    // ExclusiveStartKey = "começar depois deste item" → usar o último item que mostramos.
-                    $lastShownIndex = $perPage - 1;
-                    $lastItem = $collected[$lastShownIndex];
-                    $keyOnly = $this->filterToKeyAttributesForCursor((array) $lastItem, $params);
+                // Com FilterExpression, o cursor DEVE ser a chave do último item devolvido na página,
+                // não o LastEvaluatedKey do DynamoDB. Caso contrário itens válidos são pulados:
+                // ex. lemos 100, retornamos 11, cursor = key do 100º → próxima página começa após o 100º.
+                if ($hasMorePages && count($items) > 0) {
+                    $lastShownItem = $items[count($items) - 1];
+                    $keyOnly = $this->filterToKeyAttributesForCursor((array) $lastShownItem, $params);
                     $nextCursor = ! empty($keyOnly) ? base64_encode(json_encode($keyOnly)) : null;
                 }
             } else {
